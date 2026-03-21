@@ -243,25 +243,22 @@ Correlate Garmin sleep data with next-day training performance. Answer: "Does po
 For each feature above:
 
 ```bash
-# 1. Create and checkout the feature branch
-git checkout -b <branch-name>
-
-# 2. Generate the spec
+# 1. Generate the spec (creates branch and checks it out automatically)
 /speckit.specify "<paste the feature description above>"
 
-# 3. Clarify any gaps
+# 2. Clarify any gaps
 /speckit.clarify
 
-# 4. Generate the implementation plan
+# 3. Generate the implementation plan
 /speckit.plan
 
-# 5. Generate tasks
+# 4. Generate tasks
 /speckit.tasks
 
-# 6. Analyze for consistency
+# 5. Analyze for consistency
 /speckit.analyze
 
-# 7. Execute implementation
+# 6. Execute implementation
 /speckit.implement
 ```
 
