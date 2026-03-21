@@ -13,6 +13,8 @@ from openactivity.output.units import (
     format_distance,
     format_duration,
     format_elevation,
+    format_speed,
+    format_speed_as_pace,
 )
 
 console = Console()
@@ -26,6 +28,8 @@ app = typer.Typer(
         "  openactivity strava analyze pace --last 90d\n"
         "  openactivity strava analyze zones --zone-type heartrate\n"
         "  openactivity strava analyze power-curve\n"
+        "  openactivity strava analyze compare --range1 2025-01-01:2025-03-31"
+        " --range2 2026-01-01:2026-03-31\n"
     ),
     no_args_is_help=True,
 )
@@ -318,3 +322,265 @@ def analyze_power_curve(
         console.print(table)
     finally:
         session.close()
+
+
+@app.command("compare")
+def analyze_compare(
+    range1: str = typer.Option(
+        ...,
+        "--range1",
+        help="First date range in YYYY-MM-DD:YYYY-MM-DD format.",
+    ),
+    range2: str = typer.Option(
+        ...,
+        "--range2",
+        help="Second date range in YYYY-MM-DD:YYYY-MM-DD format.",
+    ),
+    activity_type: str | None = typer.Option(
+        None, "--type", help='Filter by activity type (e.g., "Run", "Ride").'
+    ),
+) -> None:
+    """Compare training metrics across two date ranges.
+
+    Shows a side-by-side table with totals and averages for each range,
+    plus deltas and percentage changes.
+
+    Examples:
+        openactivity strava analyze compare \\
+          --range1 2025-01-01:2025-03-31 --range2 2026-01-01:2026-03-31
+
+        openactivity strava analyze compare \\
+          --range1 2025-01-01:2025-06-30 --range2 2026-01-01:2026-06-30 --type Run
+
+        openactivity strava analyze compare \\
+          --range1 2025-01-01:2025-12-31 --range2 2026-01-01:2026-03-31 --json
+    """
+    from openactivity.analysis.compare import (
+        aggregate_range_metrics,
+        comparison_to_dict,
+        compute_comparison,
+        detect_overlap,
+        format_pct_change,
+        parse_date_range,
+    )
+    from openactivity.output.errors import exit_with_error
+
+    state = get_global_state()
+    use_json = state.get("json", False)
+    units = state.get("units", "metric")
+
+    # Parse and validate date ranges
+    try:
+        r1_start, r1_end = parse_date_range(range1)
+    except ValueError as e:
+        exit_with_error(
+            "invalid_range",
+            str(e),
+            "Use format: YYYY-MM-DD:YYYY-MM-DD (e.g., 2025-01-01:2025-03-31).",
+            use_json=use_json,
+        )
+        return  # unreachable but helps type checker
+
+    try:
+        r2_start, r2_end = parse_date_range(range2)
+    except ValueError as e:
+        exit_with_error(
+            "invalid_range",
+            str(e),
+            "Use format: YYYY-MM-DD:YYYY-MM-DD (e.g., 2025-01-01:2025-03-31).",
+            use_json=use_json,
+        )
+        return
+
+    overlap = detect_overlap((r1_start, r1_end), (r2_start, r2_end))
+
+    init_db()
+    session = get_session()
+
+    try:
+        r1_metrics = aggregate_range_metrics(
+            session, start=r1_start, end=r1_end, activity_type=activity_type,
+        )
+        r2_metrics = aggregate_range_metrics(
+            session, start=r2_start, end=r2_end, activity_type=activity_type,
+        )
+
+        comparison = compute_comparison(
+            r1_metrics, r2_metrics,
+            activity_type=activity_type,
+            overlap=overlap,
+        )
+
+        # US2: no-results message for type-filtered queries
+        if activity_type and r1_metrics.count == 0 and r2_metrics.count == 0:
+            if use_json:
+                print_json(comparison_to_dict(comparison, units=units))
+            else:
+                console.print(
+                    f"No {activity_type} activities found in either range."
+                )
+            return
+
+        # US3: JSON output
+        if use_json:
+            print_json(comparison_to_dict(comparison, units=units))
+            return
+
+        # US1: Rich table output
+        title = "Training Comparison"
+        if activity_type:
+            title += f" ({activity_type})"
+
+        table = Table(title=title, show_header=True, header_style="bold")
+        table.add_column("Metric")
+        table.add_column("Range 1", justify="right")
+        table.add_column("Range 2", justify="right")
+        table.add_column("Delta", justify="right")
+        table.add_column("Change", justify="right")
+
+        # Activities count
+        _add_comparison_row(
+            table, "Activities",
+            str(r1_metrics.count), str(r2_metrics.count),
+            comparison.deltas.get("count", 0),
+            comparison.pct_changes.get("count"),
+            fmt="int",
+        )
+
+        # Distance
+        _add_comparison_row(
+            table, "Distance",
+            format_distance(r1_metrics.distance, units),
+            format_distance(r2_metrics.distance, units),
+            comparison.deltas.get("distance_m", 0),
+            comparison.pct_changes.get("distance_m"),
+            fmt="distance", units=units,
+        )
+
+        # Moving Time
+        _add_comparison_row(
+            table, "Moving Time",
+            format_duration(r1_metrics.moving_time),
+            format_duration(r2_metrics.moving_time),
+            comparison.deltas.get("moving_time_s", 0),
+            comparison.pct_changes.get("moving_time_s"),
+            fmt="duration",
+        )
+
+        # Elevation
+        _add_comparison_row(
+            table, "Elevation",
+            format_elevation(r1_metrics.elevation_gain, units),
+            format_elevation(r2_metrics.elevation_gain, units),
+            comparison.deltas.get("elevation_gain_m", 0),
+            comparison.pct_changes.get("elevation_gain_m"),
+            fmt="elevation", units=units,
+        )
+
+        # Avg Pace (if present)
+        if "avg_pace_s_per_km" in comparison.deltas:
+            p1 = r1_metrics.avg_pace
+            p2 = r2_metrics.avg_pace
+            table.add_row(
+                "Avg Pace",
+                format_speed_as_pace(1.0 / p1, units) if p1 and p1 > 0 else "N/A",
+                format_speed_as_pace(1.0 / p2, units) if p2 and p2 > 0 else "N/A",
+                _format_delta_duration(comparison.deltas["avg_pace_s_per_km"]),
+                format_pct_change(comparison.pct_changes.get("avg_pace_s_per_km")),
+            )
+
+        # Avg Speed (if present)
+        if "avg_speed_m_s" in comparison.deltas:
+            s1 = r1_metrics.avg_speed
+            s2 = r2_metrics.avg_speed
+            table.add_row(
+                "Avg Speed",
+                format_speed(s1, units) if s1 else "N/A",
+                format_speed(s2, units) if s2 else "N/A",
+                _format_delta_speed(comparison.deltas["avg_speed_m_s"], units),
+                format_pct_change(comparison.pct_changes.get("avg_speed_m_s")),
+            )
+
+        # Avg HR (if present)
+        if "avg_heartrate" in comparison.deltas:
+            hr1 = r1_metrics.avg_heartrate
+            hr2 = r2_metrics.avg_heartrate
+            delta_hr = comparison.deltas["avg_heartrate"]
+            sign = "+" if delta_hr > 0 else ""
+            table.add_row(
+                "Avg Heart Rate",
+                f"{hr1:.0f} bpm" if hr1 else "N/A",
+                f"{hr2:.0f} bpm" if hr2 else "N/A",
+                f"{sign}{delta_hr:.0f}",
+                format_pct_change(comparison.pct_changes.get("avg_heartrate")),
+            )
+
+        console.print(table)
+
+        # Range metadata footer
+        console.print(
+            f"  Range 1: {r1_start} → {r1_end}"
+        )
+        console.print(
+            f"  Range 2: {r2_start} → {r2_end}"
+        )
+        if overlap:
+            console.print(
+                "[yellow]  ⚠ Ranges overlap — shared activities contribute to both sides.[/yellow]"
+            )
+
+    finally:
+        session.close()
+
+
+def _add_comparison_row(
+    table: Table,
+    label: str,
+    val1_str: str,
+    val2_str: str,
+    delta: float,
+    pct: float | None,
+    *,
+    fmt: str = "float",
+    units: str = "metric",
+) -> None:
+    """Add a row to the comparison table with formatted delta."""
+    from openactivity.analysis.compare import format_pct_change
+
+    if fmt == "int":
+        sign = "+" if delta > 0 else ""
+        delta_str = f"{sign}{int(delta)}"
+    elif fmt == "distance":
+        sign = "+" if delta > 0 else ""
+        delta_str = f"{sign}{format_distance(abs(delta), units)}"
+        if delta < 0:
+            delta_str = f"-{format_distance(abs(delta), units)}"
+    elif fmt == "duration":
+        delta_str = _format_delta_duration(delta)
+    elif fmt == "elevation":
+        sign = "+" if delta > 0 else ""
+        delta_str = f"{sign}{format_elevation(abs(delta), units)}"
+        if delta < 0:
+            delta_str = f"-{format_elevation(abs(delta), units)}"
+    else:
+        sign = "+" if delta > 0 else ""
+        delta_str = f"{sign}{delta:.1f}"
+
+    table.add_row(label, val1_str, val2_str, delta_str, format_pct_change(pct))
+
+
+def _format_delta_duration(seconds: float) -> str:
+    """Format a duration delta with sign."""
+    sign = "+" if seconds > 0 else "-"
+    abs_secs = int(abs(seconds))
+    if abs_secs == 0:
+        return "—"
+    return f"{sign}{format_duration(abs_secs)}"
+
+
+def _format_delta_speed(delta_m_s: float, units: str) -> str:
+    """Format a speed delta with sign."""
+    if delta_m_s == 0:
+        return "—"
+    sign = "+" if delta_m_s > 0 else "-"
+    return f"{sign}{format_speed(abs(delta_m_s), units)}"
