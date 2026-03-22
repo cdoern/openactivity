@@ -91,6 +91,7 @@ class Activity(Base):
     start_latlng: Mapped[str | None] = mapped_column(String, nullable=True)
     end_latlng: Mapped[str | None] = mapped_column(String, nullable=True)
     synced_detail: Mapped[bool] = mapped_column(Boolean, default=False)
+    pr_scanned: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -214,6 +215,38 @@ class SegmentEffort(Base):
         Index("ix_effort_segment", "segment_id"),
         Index("ix_effort_activity", "activity_id"),
     )
+
+
+class PersonalRecord(Base):
+    __tablename__ = "personal_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    record_type: Mapped[str] = mapped_column(String, nullable=False)  # "distance" or "power"
+    distance_type: Mapped[str] = mapped_column(String, nullable=False)  # e.g., "5K", "20min"
+    value: Mapped[float] = mapped_column(Float, nullable=False)  # seconds or watts
+    pace: Mapped[float | None] = mapped_column(Float, nullable=True)  # seconds per meter
+    activity_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    activity_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    achieved_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    distance_meters: Mapped[float | None] = mapped_column(Float, nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_pr_distance_type", "distance_type"),
+        Index("ix_pr_current", "is_current", "distance_type"),
+        Index("ix_pr_activity", "activity_id"),
+    )
+
+
+class CustomDistance(Base):
+    __tablename__ = "custom_distances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    label: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    distance_meters: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class SyncState(Base):
