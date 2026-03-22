@@ -13,8 +13,10 @@ from openactivity.db.models import (
     Athlete,
     AthleteStats,
     AthleteZone,
+    CustomDistance,
     Gear,
     Lap,
+    PersonalRecord,
     Segment,
     SegmentEffort,
     SyncState,
@@ -159,6 +161,35 @@ def get_segment_efforts(
         .limit(limit)
         .all()
     )
+
+
+def get_personal_records(
+    session: Session, *, record_type: str | None = None, current_only: bool = True
+) -> list[PersonalRecord]:
+    """Get personal records, optionally filtered by type."""
+    query = session.query(PersonalRecord)
+    if current_only:
+        query = query.filter(PersonalRecord.is_current.is_(True))
+    if record_type:
+        query = query.filter(PersonalRecord.record_type == record_type)
+    return query.order_by(PersonalRecord.distance_type).all()
+
+
+def get_records_by_distance(
+    session: Session, distance_type: str
+) -> list[PersonalRecord]:
+    """Get all records for a distance type, ordered by date."""
+    return (
+        session.query(PersonalRecord)
+        .filter(PersonalRecord.distance_type == distance_type)
+        .order_by(PersonalRecord.achieved_date)
+        .all()
+    )
+
+
+def get_custom_distances(session: Session) -> list[CustomDistance]:
+    """Get all custom distances."""
+    return session.query(CustomDistance).order_by(CustomDistance.label).all()
 
 
 def get_sync_state(session: Session, entity_type: str) -> SyncState | None:
