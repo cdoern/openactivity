@@ -436,6 +436,11 @@ def get_effort_trend(
         })
         effort_scores.append(effort.score)
 
+    # Reverse to chronological order (query returns descending)
+    entries.reverse()
+    gap_values.reverse()
+    gap_dates.reverse()
+
     # Trend direction
     trend = _compute_trend_direction(gap_values, gap_dates)
 
