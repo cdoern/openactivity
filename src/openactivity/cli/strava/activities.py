@@ -235,6 +235,10 @@ def show_activity(
             return
 
         if use_json:
+            from openactivity.analysis.gap import compute_gap
+
+            json_gap = compute_gap(activity, session)
+
             data = {
                 "id": activity.id,
                 "name": activity.name,
@@ -254,6 +258,13 @@ def show_activity(
                 "max_watts": activity.max_watts,
                 "calories": activity.calories,
                 "description": activity.description,
+                "gap": json_gap.overall_gap,
+                "gap_formatted": (
+                    format_speed_as_pace(json_gap.overall_gap, units)
+                    if json_gap.available and json_gap.overall_gap
+                    else None
+                ),
+                "gap_available": json_gap.available,
                 "gear": {"id": gear.id, "name": gear.name} if gear else None,
                 "laps": [
                     {
@@ -263,8 +274,18 @@ def show_activity(
                         "moving_time": lap.moving_time,
                         "average_speed": lap.average_speed,
                         "average_heartrate": lap.average_heartrate,
+                        "gap": (
+                            json_gap.lap_gaps[i]
+                            if i < len(json_gap.lap_gaps)
+                            else None
+                        ),
+                        "gap_formatted": (
+                            format_speed_as_pace(json_gap.lap_gaps[i], units)
+                            if i < len(json_gap.lap_gaps) and json_gap.lap_gaps[i]
+                            else None
+                        ),
                     }
-                    for lap in laps
+                    for i, lap in enumerate(laps)
                 ],
                 "zones": [
                     {
@@ -296,6 +317,18 @@ def show_activity(
         console.print(f"  Elevation: {format_elevation(activity.total_elevation_gain, units)}")
         console.print(f"  Pace: {format_speed_as_pace(activity.average_speed, units)}")
 
+        # Grade-Adjusted Pace
+        from openactivity.analysis.gap import compute_gap
+
+        gap_result = compute_gap(activity, session)
+        if gap_result.available and gap_result.overall_gap:
+            console.print(
+                f"  GAP: {format_speed_as_pace(gap_result.overall_gap, units)}"
+                "   (grade-adjusted)"
+            )
+        else:
+            gap_result = None  # type: ignore[assignment]
+
         if activity.average_heartrate:
             console.print(
                 f"  Heart Rate: {activity.average_heartrate:.0f} avg "
@@ -321,17 +354,29 @@ def show_activity(
             lap_table.add_column("Distance", justify="right")
             lap_table.add_column("Time", justify="right")
             lap_table.add_column("Pace", justify="right")
+            if gap_result and gap_result.available:
+                lap_table.add_column("GAP", justify="right")
             lap_table.add_column("HR", justify="right")
 
-            for lap in laps:
+            for idx, lap in enumerate(laps):
                 hr_str = f"{lap.average_heartrate:.0f}" if lap.average_heartrate else "-"
-                lap_table.add_row(
+                row = [
                     str(lap.lap_index),
                     format_distance(lap.distance, units),
                     format_duration(lap.moving_time),
                     format_speed_as_pace(lap.average_speed, units),
-                    hr_str,
-                )
+                ]
+                if gap_result and gap_result.available:
+                    lap_gap = (
+                        gap_result.lap_gaps[idx]
+                        if idx < len(gap_result.lap_gaps) and gap_result.lap_gaps[idx]
+                        else None
+                    )
+                    row.append(
+                        format_speed_as_pace(lap_gap, units) if lap_gap else "—"
+                    )
+                row.append(hr_str)
+                lap_table.add_row(*row)
             console.print(lap_table)
 
         # Zones section

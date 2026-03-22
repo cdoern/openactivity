@@ -27,9 +27,9 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 005-gap-effort: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing
 - 004-personal-records: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing
 - 003-time-range-compare: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing
-- 001-strava-cli: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM), stravalib (Strava API), keyring (credentials), matplotlib (charts), gpxpy (GPX export), httpx (HTTP client)
 
 
 <!-- MANUAL ADDITIONS START -->
