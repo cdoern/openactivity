@@ -53,7 +53,7 @@ def get_activities(
     query = session.query(Activity)
 
     if activity_type:
-        query = query.filter(Activity.type.ilike(activity_type))
+        query = query.filter(Activity.type.ilike(f"%{activity_type}%"))
     if after:
         query = query.filter(Activity.start_date >= after)
     if before:
@@ -82,7 +82,7 @@ def count_activities(
     """Count activities matching filters."""
     query = session.query(Activity)
     if activity_type:
-        query = query.filter(Activity.type.ilike(activity_type))
+        query = query.filter(Activity.type.ilike(f"%{activity_type}%"))
     if after:
         query = query.filter(Activity.start_date >= after)
     if before:
