@@ -810,3 +810,232 @@ def analyze_blocks(
             console.print(f"  {desc}")
     finally:
         session.close()
+
+
+@app.command("correlate")
+def analyze_correlate(
+    x_metric: str = typer.Option(
+        ..., "--x", help="X-axis metric name (e.g., weekly_distance)."
+    ),
+    y_metric: str = typer.Option(
+        ..., "--y", help="Y-axis metric name (e.g., avg_pace)."
+    ),
+    lag: int = typer.Option(
+        0, "--lag", help="Lag offset in weeks (0, 1, 2, or 4)."
+    ),
+    last: str = typer.Option(
+        "1y", "--last", help='Time window (e.g., "6m", "1y", "all").'
+    ),
+    activity_type: str = typer.Option(
+        "Run", "--type", help='Activity type filter (e.g., "Run").'
+    ),
+) -> None:
+    """Correlate two weekly training metrics.
+
+    Find patterns between any two metrics across your training history.
+    Computes Pearson and Spearman correlations with statistical significance.
+
+    Supported metrics:
+      weekly_distance    Total distance in the week
+      weekly_duration    Total moving time
+      weekly_elevation   Total elevation gain
+      avg_pace           Distance-weighted average pace
+      avg_hr             Average heart rate (needs HR data)
+      max_hr             Maximum heart rate (needs HR data)
+      activity_count     Number of activities
+      rest_days          Days without activity (0-7)
+      longest_run        Longest single activity distance
+
+    Examples:
+
+      openactivity strava analyze correlate --x weekly_distance --y avg_pace
+      openactivity strava analyze correlate --x weekly_distance --y avg_pace --lag 4
+      openactivity strava analyze correlate --x rest_days --y avg_hr --last 6m
+    """
+    state = get_global_state()
+    use_json = state.get("json", False)
+    units = state.get("units", "metric")
+
+    init_db()
+    session = get_session()
+
+    try:
+        from openactivity.analysis.correlate import correlate
+
+        result = correlate(
+            session,
+            x_metric=x_metric,
+            y_metric=y_metric,
+            time_window=last,
+            activity_type=activity_type,
+            lag=lag,
+        )
+
+        if use_json:
+            _render_correlate_json(result)
+        elif "error" in result:
+            _render_correlate_error(result)
+        else:
+            _render_correlate_human(result, units)
+    finally:
+        session.close()
+
+
+def _render_correlate_error(result: dict) -> None:
+    """Render correlation error output."""
+    console.print()
+    console.print(f"[bold red]{result.get('message', 'Unknown error')}[/bold red]")
+
+    if result.get("error") == "insufficient_data":
+        console.print(
+            "\n  Tip: Use a wider time window (--last 1y) or ensure"
+        )
+        console.print("  activities have the required data (e.g., heart rate).")
+
+    if result.get("error") == "invalid_metric":
+        from openactivity.analysis.correlate import SUPPORTED_METRICS
+
+        console.print("\n  Supported metrics:")
+        for name, desc in sorted(SUPPORTED_METRICS.items()):
+            console.print(f"    {name:<20} {desc}")
+
+    console.print()
+
+
+def _render_correlate_human(result: dict, units: str) -> None:
+    """Render human-readable correlation output."""
+    x = result["x_metric"]
+    y = result["y_metric"]
+    lag_val = result["lag"]
+
+    console.print()
+    lag_text = f" (lag: {lag_val} weeks)" if lag_val > 0 else ""
+    console.print(f"[bold]Correlation: {x} vs {y}{lag_text}[/bold]")
+    console.print()
+
+    # Pearson
+    p_r = result["pearson_r"]
+    p_p = result["pearson_p"]
+    p_sig = "significant" if p_p < 0.05 else "not significant"
+    p_str = classify_strength_display(p_r)
+    console.print(f"  Pearson:   r = {p_r:+.4f}  p = {p_p:.4f}  ({p_str}, {p_sig})")
+
+    # Spearman
+    s_r = result["spearman_r"]
+    s_p = result["spearman_p"]
+    s_sig = "significant" if s_p < 0.05 else "not significant"
+    s_str = classify_strength_display(s_r)
+    console.print(f"  Spearman:  \u03c1 = {s_r:+.4f}  p = {s_p:.4f}  ({s_str}, {s_sig})")
+
+    console.print()
+
+    # Strength and direction
+    strength = result["strength"]
+    direction_word = "negative" if p_r < 0 else "positive"
+    console.print(
+        f"  Strength:  {strength.title()} {direction_word} correlation"
+    )
+    console.print(f"  Direction: {result['direction']}")
+    console.print(
+        f"  Samples:   {result['sample_size']} usable weeks "
+        f"(of {result['total_weeks']} total)"
+    )
+
+    if result.get("low_confidence"):
+        console.print(
+            "\n  [yellow]\u26a0 Small sample size — results may not be reliable[/yellow]"
+        )
+
+    if not result["significant"]:
+        console.print(
+            "\n  [dim]\u26a0 Result is not statistically significant (p > 0.05)[/dim]"
+        )
+
+    console.print(
+        "\n  [dim]\u26a0 Correlation does not imply causation[/dim]"
+    )
+
+    # Data points table (first 10)
+    data_points = result.get("data_points", [])
+    if data_points:
+        console.print()
+        table = Table(
+            title=f"Data Points (first 10 of {len(data_points)})",
+            show_header=True,
+            box=None,
+            padding=(0, 2),
+        )
+        table.add_column("Week", style="cyan")
+        table.add_column(x, justify="right")
+        table.add_column(y, justify="right")
+
+        for dp in data_points[:10]:
+            x_formatted = _format_metric_value(x, dp["x"], units)
+            y_formatted = _format_metric_value(y, dp["y"], units)
+            table.add_row(dp["week_key"], x_formatted, y_formatted)
+
+        console.print(table)
+
+    console.print()
+
+
+def classify_strength_display(r: float) -> str:
+    """Classify correlation strength for display."""
+    abs_r = abs(r)
+    if abs_r >= 0.7:
+        return "strong"
+    if abs_r >= 0.3:
+        return "moderate"
+    return "weak"
+
+
+def _format_metric_value(metric: str, value: float, units: str) -> str:
+    """Format a metric value for display."""
+    if metric in ("weekly_distance", "longest_run"):
+        return format_distance(value, units)
+    if metric == "weekly_duration":
+        return format_duration(int(value))
+    if metric == "weekly_elevation":
+        return format_elevation(value, units)
+    if metric == "avg_pace":
+        # value is seconds/km, convert to m/s for format function
+        if value > 0:
+            m_per_s = 1000.0 / value
+            return format_speed_as_pace(m_per_s, units)
+        return "N/A"
+    if metric in ("avg_hr", "max_hr"):
+        return f"{value:.0f} bpm"
+    if metric == "activity_count":
+        return str(int(value))
+    if metric == "rest_days":
+        return f"{int(value)} days"
+    return f"{value:.1f}"
+
+
+def _render_correlate_json(result: dict) -> None:
+    """Render JSON correlation output."""
+    if "error" in result:
+        print_json(result)
+        return
+
+    output = {
+        "x_metric": result["x_metric"],
+        "y_metric": result["y_metric"],
+        "lag": result["lag"],
+        "time_window": result["time_window"],
+        "activity_type": result["activity_type"],
+        "pearson_r": result["pearson_r"],
+        "pearson_p": result["pearson_p"],
+        "spearman_r": result["spearman_r"],
+        "spearman_p": result["spearman_p"],
+        "strength": result["strength"],
+        "direction": result["direction"],
+        "significant": result["significant"],
+        "sample_size": result["sample_size"],
+        "total_weeks": result["total_weeks"],
+        "data_points": [
+            {"week_key": dp["week_key"], "x": dp["x"], "y": dp["y"]}
+            for dp in result.get("data_points", [])
+        ],
+    }
+    print_json(output)
