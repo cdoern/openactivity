@@ -584,3 +584,112 @@ def _format_delta_speed(delta_m_s: float, units: str) -> str:
         return "—"
     sign = "+" if delta_m_s > 0 else "-"
     return f"{sign}{format_speed(abs(delta_m_s), units)}"
+
+
+@app.command("effort")
+def analyze_effort(
+    last: str = typer.Option(
+        "90d", "--last", help='Time window: "30d", "90d", "6m", "1y", "all".'
+    ),
+    activity_type: str = typer.Option(
+        "Run", "--type", help='Activity type (e.g., "Run", "Ride").'
+    ),
+) -> None:
+    """Grade-adjusted pace and effort score trend over time.
+
+    Shows GAP (equivalent flat pace) and effort score for each activity,
+    enabling fair comparison of efforts across varying terrain.
+
+    Examples:
+        openactivity strava analyze effort
+        openactivity strava analyze effort --last 6m
+        openactivity strava analyze effort --type Ride --last 1y
+        openactivity strava analyze effort --json
+    """
+    state = get_global_state()
+    use_json = state.get("json", False)
+    units = state.get("units", "metric")
+
+    init_db()
+    session = get_session()
+
+    try:
+        from openactivity.analysis.gap import get_effort_trend
+
+        result = get_effort_trend(
+            session, time_window=last, activity_type=activity_type
+        )
+
+        if not result["activities"]:
+            if use_json:
+                print_json(result)
+            else:
+                console.print(
+                    f"No {activity_type} activities found in the last {last}."
+                )
+            return
+
+        # Format GAP values for display
+        avg_gap = result["avg_gap"]
+        if avg_gap:
+            result["avg_gap_formatted"] = format_speed_as_pace(avg_gap, units)
+
+        for entry in result["activities"]:
+            gap = entry.get("gap")
+            entry["actual_pace_formatted"] = (
+                format_speed_as_pace(entry["actual_pace"], units)
+                if entry.get("actual_pace")
+                else None
+            )
+            entry["gap_formatted"] = (
+                format_speed_as_pace(gap, units) if gap else None
+            )
+
+        if use_json:
+            print_json(result)
+            return
+
+        # Rich table output
+        trend_icon = {
+            "improving": "[green]↗ Improving[/green]",
+            "declining": "[red]↘ Declining[/red]",
+            "stable": "[yellow]→ Stable[/yellow]",
+        }
+
+        table = Table(
+            title=f"Effort Trend ({activity_type}, last {last})",
+            show_header=True,
+            header_style="bold",
+        )
+        table.add_column("Date")
+        table.add_column("Activity")
+        table.add_column("Distance", justify="right")
+        table.add_column("Pace", justify="right")
+        table.add_column("GAP", justify="right")
+        table.add_column("Elev.", justify="right")
+        table.add_column("Effort", justify="right")
+
+        for entry in result["activities"][-30:]:  # Last 30
+            date_str = entry["date"][:10] if entry["date"] else ""
+            table.add_row(
+                date_str,
+                (entry["activity_name"] or "")[:20],
+                format_distance(entry["distance"], units),
+                entry.get("actual_pace_formatted") or "N/A",
+                entry.get("gap_formatted") or "—",
+                format_elevation(entry["elevation_gain"], units),
+                str(entry["effort_score"]),
+            )
+
+        console.print(table)
+
+        # Summary line
+        trend_str = trend_icon.get(result["trend"], result["trend"])
+        avg_gap_str = result.get("avg_gap_formatted") or "N/A"
+        console.print(
+            f"\n  Trend: {trend_str}  |  "
+            f"Avg GAP: {avg_gap_str}  |  "
+            f"Avg Effort: {result['avg_effort_score']}"
+        )
+    finally:
+        session.close()
