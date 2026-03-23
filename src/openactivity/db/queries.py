@@ -8,6 +8,7 @@ from sqlalchemy import asc, desc
 
 from openactivity.db.models import (
     Activity,
+    ActivityLink,
     ActivityStream,
     ActivityZone,
     Athlete,
@@ -235,3 +236,179 @@ def upsert_sync_state(
     state.status = status
     session.flush()
     return state
+
+
+def detect_duplicate_activities(session: Session, activity: Activity) -> list[tuple[Activity, float]]:
+    """Detect potential duplicate activities from other providers.
+
+    Uses time window (±60 seconds), activity type matching, and duration tolerance (±5%)
+    to find activities that are likely the same activity recorded on different platforms.
+
+    Args:
+        session: Database session
+        activity: The activity to find duplicates for
+
+    Returns:
+        List of (matching_activity, confidence_score) tuples, sorted by confidence desc
+    """
+    if not activity.start_date or not activity.elapsed_time:
+        return []
+
+    # Get opposite provider
+    other_provider = "garmin" if activity.provider == "strava" else "strava"
+
+    # Time window: ±60 seconds
+    time_window_seconds = 60
+    from datetime import timedelta
+
+    start_min = activity.start_date - timedelta(seconds=time_window_seconds)
+    start_max = activity.start_date + timedelta(seconds=time_window_seconds)
+
+    # Query candidates from other provider
+    candidates = (
+        session.query(Activity)
+        .filter(
+            Activity.provider == other_provider,
+            Activity.start_date >= start_min,
+            Activity.start_date <= start_max,
+        )
+        .all()
+    )
+
+    matches = []
+
+    for candidate in candidates:
+        # Check if already linked
+        existing_link = (
+            session.query(ActivityLink)
+            .filter(
+                (ActivityLink.strava_activity_id == activity.id)
+                | (ActivityLink.garmin_activity_id == activity.id)
+                | (ActivityLink.strava_activity_id == candidate.id)
+                | (ActivityLink.garmin_activity_id == candidate.id)
+            )
+            .first()
+        )
+
+        if existing_link:
+            continue  # Skip already linked activities
+
+        # Type check (normalize types for comparison)
+        if not _types_match(activity.type, candidate.type):
+            continue
+
+        # Duration check (within 5%)
+        if not candidate.elapsed_time or candidate.elapsed_time == 0:
+            continue
+
+        duration_ratio = candidate.elapsed_time / activity.elapsed_time
+        if not (0.95 <= duration_ratio <= 1.05):
+            continue
+
+        # Calculate confidence score
+        time_diff = abs((activity.start_date - candidate.start_date).total_seconds())
+        time_score = 1.0 - (time_diff / time_window_seconds)
+        duration_score = 1.0 - abs(1.0 - duration_ratio) / 0.05
+
+        confidence = (time_score * 0.6) + (duration_score * 0.4)
+
+        if confidence >= 0.7:
+            matches.append((candidate, confidence))
+
+    # Sort by confidence descending
+    matches.sort(key=lambda x: x[1], reverse=True)
+
+    return matches
+
+
+def _types_match(type1: str | None, type2: str | None) -> bool:
+    """Check if two activity types match (case-insensitive)."""
+    if not type1 or not type2:
+        return False
+
+    # Normalize types
+    t1 = type1.lower()
+    t2 = type2.lower()
+
+    # Direct match
+    if t1 == t2:
+        return True
+
+    # Handle common variations
+    run_types = {"run", "running", "trail_running", "treadmill_running"}
+    if t1 in run_types and t2 in run_types:
+        return True
+
+    ride_types = {"ride", "cycling", "road_biking", "mountain_biking"}
+    if t1 in ride_types and t2 in ride_types:
+        return True
+
+    virtual_ride_types = {"virtualride", "virtual_ride", "indoor_cycling"}
+    if t1 in virtual_ride_types and t2 in virtual_ride_types:
+        return True
+
+    swim_types = {"swim", "swimming", "open_water_swimming"}
+    if t1 in swim_types and t2 in swim_types:
+        return True
+
+    return False
+
+
+def link_activities(
+    session: Session,
+    strava_activity_id: int | None,
+    garmin_activity_id: int | None,
+    primary_provider: str,
+    match_confidence: float,
+) -> ActivityLink:
+    """Create a link between duplicate activities from different providers.
+
+    Args:
+        session: Database session
+        strava_activity_id: Strava activity database ID (not provider_id)
+        garmin_activity_id: Garmin activity database ID (not provider_id)
+        primary_provider: Which provider is authoritative ("strava" or "garmin")
+        match_confidence: Confidence score (0.0-1.0)
+
+    Returns:
+        The created ActivityLink record
+    """
+    if not strava_activity_id and not garmin_activity_id:
+        raise ValueError("At least one activity ID must be provided")
+
+    if match_confidence < 0.0 or match_confidence > 1.0:
+        raise ValueError("Match confidence must be between 0.0 and 1.0")
+
+    # Check if link already exists
+    existing = (
+        session.query(ActivityLink)
+        .filter(
+            (
+                (ActivityLink.strava_activity_id == strava_activity_id)
+                if strava_activity_id
+                else False
+            )
+            | (
+                (ActivityLink.garmin_activity_id == garmin_activity_id)
+                if garmin_activity_id
+                else False
+            )
+        )
+        .first()
+    )
+
+    if existing:
+        return existing
+
+    # Create new link
+    link = ActivityLink(
+        strava_activity_id=strava_activity_id,
+        garmin_activity_id=garmin_activity_id,
+        primary_provider=primary_provider,
+        match_confidence=match_confidence,
+    )
+
+    session.add(link)
+    session.flush()
+
+    return link

@@ -6,8 +6,11 @@ from datetime import datetime  # noqa: TC003 - needed at runtime by SQLAlchemy M
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
+    Date,
     DateTime,
     Float,
+    ForeignKey,
     Index,
     Integer,
     LargeBinary,
@@ -63,6 +66,8 @@ class Activity(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     athlete_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider: Mapped[str] = mapped_column(String, default="strava", nullable=False)
+    provider_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     type: Mapped[str | None] = mapped_column(String, nullable=True)
     sport_type: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -100,6 +105,7 @@ class Activity(Base):
     __table_args__ = (
         Index("ix_activity_athlete_date", "athlete_id", "start_date"),
         Index("ix_activity_type", "type"),
+        Index("ix_activity_provider", "provider", "provider_id"),
     )
 
 
@@ -258,3 +264,84 @@ class SyncState(Base):
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     page_cursor: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String, default="complete")
+
+
+class ActivityLink(Base):
+    __tablename__ = "activity_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    strava_activity_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("activities.id", ondelete="CASCADE"), nullable=True
+    )
+    garmin_activity_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("activities.id", ondelete="CASCADE"), nullable=True
+    )
+    primary_provider: Mapped[str] = mapped_column(String, nullable=False)
+    match_confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "strava_activity_id IS NOT NULL OR garmin_activity_id IS NOT NULL",
+            name="at_least_one_activity",
+        ),
+        CheckConstraint(
+            "match_confidence BETWEEN 0.0 AND 1.0", name="confidence_range"
+        ),
+    )
+
+
+class GarminDailySummary(Base):
+    __tablename__ = "garmin_daily_summary"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[datetime] = mapped_column(Date, unique=True, nullable=False)
+    resting_hr: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    hrv_avg: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    body_battery_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    body_battery_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stress_avg: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sleep_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    steps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    respiration_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spo2_avg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("resting_hr BETWEEN 30 AND 200", name="resting_hr_range"),
+        CheckConstraint("hrv_avg BETWEEN 0 AND 300", name="hrv_range"),
+        CheckConstraint("body_battery_max BETWEEN 0 AND 100", name="bb_max_range"),
+        CheckConstraint("body_battery_min BETWEEN 0 AND 100", name="bb_min_range"),
+        CheckConstraint("stress_avg BETWEEN 0 AND 100", name="stress_range"),
+        CheckConstraint("sleep_score BETWEEN 0 AND 100", name="sleep_score_range"),
+        CheckConstraint("steps >= 0", name="steps_range"),
+        CheckConstraint("respiration_avg BETWEEN 0 AND 60", name="respiration_range"),
+        CheckConstraint("spo2_avg BETWEEN 70 AND 100", name="spo2_range"),
+    )
+
+
+class GarminSleepSession(Base):
+    __tablename__ = "garmin_sleep_session"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date: Mapped[datetime] = mapped_column(Date, nullable=False)
+    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    total_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    deep_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    light_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    rem_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    awake_duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sleep_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_sleep_date", "date"),
+        Index("ix_sleep_start", "start_time"),
+        CheckConstraint("total_duration_seconds > 0", name="total_duration_positive"),
+        CheckConstraint("deep_duration_seconds >= 0", name="deep_duration_nonneg"),
+        CheckConstraint("light_duration_seconds >= 0", name="light_duration_nonneg"),
+        CheckConstraint("rem_duration_seconds >= 0", name="rem_duration_nonneg"),
+        CheckConstraint("awake_duration_seconds >= 0", name="awake_duration_nonneg"),
+        CheckConstraint("sleep_score BETWEEN 0 AND 100", name="sleep_score_range_check"),
+    )

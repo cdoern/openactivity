@@ -7,8 +7,9 @@ import contextlib
 import keyring
 
 SERVICE_NAME = "openactivity-strava"
+GARMIN_SERVICE_NAME = "openactivity-garmin"
 
-# Credential keys
+# Strava credential keys
 CLIENT_ID = "client_id"
 CLIENT_SECRET = "client_secret"
 ACCESS_TOKEN = "access_token"
@@ -16,6 +17,12 @@ REFRESH_TOKEN = "refresh_token"
 TOKEN_EXPIRY = "token_expiry"
 
 _ALL_KEYS = [CLIENT_ID, CLIENT_SECRET, ACCESS_TOKEN, REFRESH_TOKEN, TOKEN_EXPIRY]
+
+# Garmin credential keys
+GARMIN_USERNAME = "username"
+GARMIN_PASSWORD = "password"
+
+_GARMIN_KEYS = [GARMIN_USERNAME, GARMIN_PASSWORD]
 
 
 def store_credential(key: str, value: str) -> None:
@@ -77,3 +84,32 @@ def has_tokens() -> bool:
     """Check if OAuth tokens are stored."""
     access, refresh, _ = get_tokens()
     return access is not None and refresh is not None
+
+
+# Garmin credential functions
+
+
+def store_garmin_credentials(username: str, password: str) -> None:
+    """Store Garmin Connect username and password."""
+    keyring.set_password(GARMIN_SERVICE_NAME, GARMIN_USERNAME, username)
+    keyring.set_password(GARMIN_SERVICE_NAME, GARMIN_PASSWORD, password)
+
+
+def get_garmin_credentials() -> tuple[str | None, str | None]:
+    """Retrieve stored Garmin credentials. Returns (username, password)."""
+    username = keyring.get_password(GARMIN_SERVICE_NAME, GARMIN_USERNAME)
+    password = keyring.get_password(GARMIN_SERVICE_NAME, GARMIN_PASSWORD)
+    return username, password
+
+
+def delete_garmin_credentials() -> None:
+    """Delete all Garmin credentials from the OS keychain."""
+    for key in _GARMIN_KEYS:
+        with contextlib.suppress(keyring.errors.PasswordDeleteError):
+            keyring.delete_password(GARMIN_SERVICE_NAME, key)
+
+
+def has_garmin_credentials() -> bool:
+    """Check if Garmin username and password are stored."""
+    username, password = get_garmin_credentials()
+    return username is not None and password is not None
