@@ -319,6 +319,21 @@ def _sync_gear(session: Session, client) -> None:
     session.flush()
 
 
+def sync_segments(session: Session) -> dict:
+    """Public entry point: sync starred segments and their efforts."""
+    client = get_strava_client()
+    _sync_segments(session, client)
+    session.commit()
+
+    segment_count = session.query(Segment).filter_by(starred=True).count()
+    effort_count = session.query(SegmentEffort).count()
+
+    return {
+        "segments": segment_count,
+        "efforts": effort_count,
+    }
+
+
 def _sync_segments(session: Session, client) -> None:
     """Sync starred segments and their efforts."""
     _check_rate_limit()
@@ -331,6 +346,9 @@ def _sync_segments(session: Session, client) -> None:
         _check_rate_limit()
         try:
             local_segment = transform_segment(strava_segment)
+            # Force starred=True since these came from get_starred_segments()
+            local_segment.starred = True
+
             existing = session.query(Segment).filter_by(id=local_segment.id).first()
             if existing:
                 for attr in [
