@@ -693,3 +693,120 @@ def analyze_effort(
         )
     finally:
         session.close()
+
+
+@app.command("blocks")
+def analyze_blocks(
+    last: str = typer.Option(
+        "6m", "--last", help='Time window: "6m", "1y", "all".'
+    ),
+    activity_type: str = typer.Option(
+        "Run", "--type", help='Activity type (e.g., "Run", "Ride").'
+    ),
+) -> None:
+    """Detect training phases (base, build, peak, recovery) over time.
+
+    Classifies weeks by volume and intensity patterns, then groups
+    consecutive similar weeks into named training blocks.
+
+    Phases:
+
+      Base     — High volume, low intensity (building aerobic fitness)
+
+      Build    — Rising volume and intensity (preparing for performance)
+
+      Peak     — High intensity, tapering volume (race-ready sharpening)
+
+      Recovery — Low volume, <70% of recent avg (rest and adaptation)
+
+    Examples:
+        openactivity strava analyze blocks
+        openactivity strava analyze blocks --last 1y
+        openactivity strava analyze blocks --type Ride --last all
+        openactivity strava analyze blocks --json
+    """
+    state = get_global_state()
+    use_json = state.get("json", False)
+    units = state.get("units", "metric")
+
+    init_db()
+    session = get_session()
+
+    try:
+        from openactivity.analysis.blocks import PHASE_DESCRIPTIONS, detect_blocks
+
+        result = detect_blocks(
+            session, time_window=last, activity_type=activity_type
+        )
+
+        # Handle insufficient data
+        if "error" in result:
+            if use_json:
+                print_json(result)
+            else:
+                console.print(result["message"])
+            return
+
+        # Format distances for display/JSON
+        for block in result["blocks"]:
+            block["avg_weekly_distance_formatted"] = format_distance(
+                block["avg_weekly_distance"], units
+            )
+            block["start_date"] = (
+                block["start_date"].strftime("%Y-%m-%d")
+                if hasattr(block["start_date"], "strftime")
+                else str(block["start_date"])
+            )
+            block["end_date"] = (
+                block["end_date"].strftime("%Y-%m-%d")
+                if hasattr(block["end_date"], "strftime")
+                else str(block["end_date"])
+            )
+
+        if use_json:
+            print_json(result)
+            return
+
+        # Rich table output
+        table = Table(
+            title=f"Training Blocks ({activity_type}, last {last})",
+            show_header=True,
+            header_style="bold",
+        )
+        table.add_column("Phase")
+        table.add_column("Start")
+        table.add_column("End")
+        table.add_column("Weeks", justify="right")
+        table.add_column("Avg Vol.", justify="right")
+        table.add_column("Activities", justify="right")
+        table.add_column("Intensity", justify="right")
+
+        for block in result["blocks"]:
+            phase_label = block["phase"].title()
+            if block["is_current"]:
+                phase_label += " ◀"
+
+            table.add_row(
+                phase_label,
+                block["start_date"],
+                block["end_date"],
+                str(block["week_count"]),
+                block["avg_weekly_distance_formatted"],
+                str(block["activity_count"]),
+                str(block["avg_intensity"]),
+            )
+
+        console.print(table)
+
+        # Summary line
+        current = result["current_phase"].title()
+        desc = PHASE_DESCRIPTIONS.get(result["current_phase"], "")
+        console.print(
+            f"\n  Current Phase: [bold]{current}[/bold]  |  "
+            f"Total Weeks: {result['total_weeks']}  |  "
+            f"Activities: {result['total_activities']}"
+        )
+        if desc:
+            console.print(f"  {desc}")
+    finally:
+        session.close()

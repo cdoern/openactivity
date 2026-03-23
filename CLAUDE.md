@@ -27,9 +27,9 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 006-training-periodization: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing
 - 005-gap-effort: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing
 - 004-personal-records: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing
-- 003-time-range-compare: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing
 
 
 <!-- MANUAL ADDITIONS START -->
