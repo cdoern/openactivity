@@ -6,6 +6,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from openactivity.analysis.segments import (
+    compute_segment_trend,
+    compute_segment_trend_indicator,
+)
 from openactivity.cli.root import get_global_state
 from openactivity.db.database import get_session, init_db
 from openactivity.db.queries import get_segment_efforts, get_starred_segments
@@ -22,6 +26,7 @@ app = typer.Typer(
         "Examples:\n\n"
         "  openactivity strava segments list\n"
         "  openactivity strava segment 12345 efforts\n"
+        "  openactivity strava segment 12345 trend\n"
     ),
     no_args_is_help=True,
 )
@@ -32,7 +37,7 @@ def list_segments(
     activity_type: str | None = typer.Option(None, "--type", help='Filter: "Ride" or "Run".'),
     limit: int = typer.Option(20, "--limit", help="Max results."),
 ) -> None:
-    """List starred segments from local data.
+    """List starred segments from local data with trend indicators.
 
     Examples:
         openactivity strava segments list
@@ -57,20 +62,21 @@ def list_segments(
             return
 
         if use_json:
-            print_json(
-                [
-                    {
-                        "id": s.id,
-                        "name": s.name,
-                        "activity_type": s.activity_type,
-                        "distance": s.distance,
-                        "average_grade": s.average_grade,
-                        "pr_time": s.pr_time,
-                        "effort_count": s.effort_count,
-                    }
-                    for s in segments
-                ]
-            )
+            rows = []
+            for s in segments:
+                indicator, rate = compute_segment_trend_indicator(session, s.id)
+                rows.append({
+                    "id": s.id,
+                    "name": s.name,
+                    "activity_type": s.activity_type,
+                    "distance": s.distance,
+                    "average_grade": s.average_grade,
+                    "pr_time": s.pr_time,
+                    "effort_count": s.effort_count,
+                    "trend": indicator,
+                    "trend_rate": rate,
+                })
+            print_json(rows)
             return
 
         table = Table(show_header=True, header_style="bold")
@@ -81,9 +87,12 @@ def list_segments(
         table.add_column("Grade", justify="right")
         table.add_column("PR", justify="right")
         table.add_column("Efforts", justify="right")
+        table.add_column("Trend", justify="center")
+        table.add_column("Rate", justify="right")
 
         for s in segments:
             pr_str = format_duration(s.pr_time) if s.pr_time else "-"
+            indicator, rate = compute_segment_trend_indicator(session, s.id)
             table.add_row(
                 str(s.id),
                 (s.name or "")[:30],
@@ -92,6 +101,8 @@ def list_segments(
                 f"{s.average_grade:.1f}%",
                 pr_str,
                 str(s.effort_count),
+                indicator,
+                rate,
             )
 
         console.print(table)

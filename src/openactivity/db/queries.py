@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import desc
+from sqlalchemy import asc, desc
 
 from openactivity.db.models import (
     Activity,
@@ -161,6 +161,24 @@ def get_segment_efforts(
         .limit(limit)
         .all()
     )
+
+
+def get_segment_efforts_chronological(
+    session: Session, segment_id: int, *, limit: int = 10000
+) -> list[SegmentEffort]:
+    """Get efforts on a segment, ordered by date ascending (oldest first)."""
+    return (
+        session.query(SegmentEffort)
+        .filter_by(segment_id=segment_id)
+        .order_by(asc(SegmentEffort.start_date))
+        .limit(limit)
+        .all()
+    )
+
+
+def get_segment_by_id(session: Session, segment_id: int) -> Segment | None:
+    """Get a single segment by ID."""
+    return session.query(Segment).filter_by(id=segment_id).first()
 
 
 def get_personal_records(

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.specify/scripts/bash/check-prerequisites.sh --json --require-tasks --include-tasks)",
+      "Bash(python -m pytest tests/unit/test_compare.py -v)",
+      "Bash(python:*)",
+      "Bash(git checkout:*)",
+      "Bash(.specify/scripts/bash/check-prerequisites.sh --json --paths-only)",
+      "Bash(.specify/scripts/bash/check-prerequisites.sh --json)",
+      "Bash(openactivity strava:*)"
+    ]
+  }
+}
