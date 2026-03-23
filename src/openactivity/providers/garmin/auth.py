@@ -1,13 +1,17 @@
-"""Garmin Connect authentication module."""
+"""Garmin Connect authentication module with MFA support."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from openactivity.auth import keyring
 from openactivity.providers.garmin.client import GarminClient
 
 
 def authenticate(username: str, password: str) -> tuple[bool, str | None]:
-    """Authenticate with Garmin Connect and store credentials.
+    """Authenticate with Garmin Connect using username/password (supports MFA).
+
+    This will prompt for MFA code if required. Tokens are saved for future use.
 
     Args:
         username: Garmin Connect email/username
@@ -18,49 +22,59 @@ def authenticate(username: str, password: str) -> tuple[bool, str | None]:
         - (True, None) if authentication succeeded
         - (False, error_type) if authentication failed
     """
-    client = GarminClient(username, password)
+    client = GarminClient()
 
-    success, error = client.authenticate()
+    success, error = client.authenticate_with_credentials(username, password)
 
     if success:
-        keyring.store_garmin_credentials(username, password)
+        # Store username for reference (but not password - we use tokens now)
+        keyring.store_garmin_credentials(username, "TOKEN_BASED_AUTH")
         return True, None
 
     return False, error
 
 
 def get_authenticated_client() -> tuple[GarminClient | None, str | None]:
-    """Get an authenticated Garmin client using stored credentials.
+    """Get an authenticated Garmin client using saved tokens.
+
+    This reuses OAuth tokens from previous authentication, avoiding repeated logins.
 
     Returns:
         Tuple of (client, error_message)
         - (GarminClient, None) if authentication succeeded
         - (None, error_type) if authentication failed
     """
-    username, password = keyring.get_garmin_credentials()
+    client = GarminClient()
 
-    if not username or not password:
-        return None, "no_credentials"
-
-    client = GarminClient(username, password)
-
-    success, error = client.authenticate()
+    # Try to authenticate with saved tokens first
+    success, error = client.authenticate_with_tokens()
 
     if success:
         return client, None
 
+    # No valid tokens found
     return None, error
 
 
 def is_authenticated() -> bool:
-    """Check if Garmin credentials are stored.
+    """Check if Garmin tokens exist.
 
     Returns:
-        True if credentials are stored in keyring
+        True if garth tokens are saved
     """
-    return keyring.has_garmin_credentials()
+    tokens_dir = Path.home() / ".local" / "share" / "openactivity" / "garmin"
+    token_file = tokens_dir / "tokens"
+    return token_file.exists()
 
 
 def logout() -> None:
-    """Remove stored Garmin credentials from keyring."""
+    """Remove stored Garmin tokens and credentials."""
+    # Remove garth tokens
+    tokens_dir = Path.home() / ".local" / "share" / "openactivity" / "garmin"
+    if tokens_dir.exists():
+        import shutil
+
+        shutil.rmtree(tokens_dir)
+
+    # Remove keyring entry
     keyring.delete_garmin_credentials()

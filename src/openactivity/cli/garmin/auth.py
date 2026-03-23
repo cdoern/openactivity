@@ -1,4 +1,4 @@
-"""Garmin authentication CLI command."""
+"""Garmin authentication CLI command with MFA support."""
 
 from __future__ import annotations
 
@@ -16,53 +16,54 @@ def garmin_auth(
 ) -> None:
     """Authenticate with Garmin Connect.
 
-    Interactive authentication that prompts for username and password,
-    then stores credentials securely in the system keyring.
+    Supports two-factor authentication (MFA). You will be prompted for your
+    MFA code if you have it enabled on your Garmin account.
+
+    Authentication tokens are saved and reused, so you only need to
+    authenticate once (unless tokens expire).
     """
     # Check status only
     if status:
         if auth.is_authenticated():
             username, _ = keyring.get_garmin_credentials()
-            console.print("[green]Garmin Connect: Authenticated[/green]")
-            console.print(f"Username: {username}")
+            console.print("[green]✓ Garmin Connect: Authenticated[/green]")
+            if username and username != "TOKEN_BASED_AUTH":
+                console.print(f"Username: {username}")
+            console.print("\n[dim]Using saved OAuth tokens (supports MFA)[/dim]")
         else:
             console.print("[yellow]Garmin Connect: Not authenticated[/yellow]")
+            console.print("Run 'openactivity garmin auth' to authenticate.")
         return
 
     # Interactive authentication
-    console.print("[bold]Garmin Connect Authentication[/bold]\n")
+    console.print("[bold]Garmin Connect Authentication[/bold]")
+    console.print("[dim]Supports MFA - you'll be prompted for your code if enabled[/dim]\n")
 
     # Check if already authenticated
     if auth.is_authenticated():
-        username, _ = keyring.get_garmin_credentials()
-        console.print(f"[yellow]Warning: Garmin credentials already stored[/yellow]")
-        console.print(f"Current username: {username}")
-        overwrite = typer.confirm("Overwrite existing credentials?")
+        console.print("[yellow]⚠ You are already authenticated[/yellow]")
+        overwrite = typer.confirm("Re-authenticate anyway?")
         if not overwrite:
             console.print("Authentication cancelled")
             return
+        console.print()
 
     # Prompt for credentials
-    username = typer.prompt("Username")
+    username = typer.prompt("Garmin email")
     password = typer.prompt("Password", hide_input=True)
 
-    console.print("\nAuthenticating with Garmin Connect...")
+    console.print("\n[bold]Authenticating with Garmin Connect...[/bold]")
+    console.print("[dim]If you have MFA enabled, you'll be prompted for your code...[/dim]\n")
 
-    # Attempt authentication
+    # Attempt authentication (garth will handle MFA prompt)
     success, error = auth.authenticate(username, password)
 
     if success:
-        console.print("[green]✓ Authentication successful[/green]")
-        console.print("Credentials stored securely in system keyring")
-        console.print(
-            "\n[dim]Note: Two-factor authentication (MFA) is not fully supported.[/dim]"
-        )
-        console.print(
-            "[dim]If you have MFA enabled, you may need to use an app-specific password."
-            "[/dim]"
-        )
+        console.print("\n[green]✓ Authentication successful![/green]")
+        console.print("OAuth tokens saved - you won't need to re-authenticate for weeks/months")
+        console.print("\n[dim]Tokens are stored in: ~/.local/share/openactivity/garmin/[/dim]")
     else:
-        console.print("[red]Error: Authentication failed[/red]")
+        console.print("\n[red]✗ Authentication failed[/red]")
 
         # Provide specific error messages
         if error == "rate_limit":
@@ -76,18 +77,14 @@ def garmin_auth(
             console.print(
                 "  3. Try logging into https://connect.garmin.com in a browser first"
             )
-            console.print(
-                "  4. If the issue persists, Garmin may be detecting automated access"
-            )
         elif error == "invalid_credentials":
-            console.print("Invalid username or password.")
-            console.print("\nDouble-check your Garmin Connect credentials.")
+            console.print("\n[bold]Invalid username or password[/bold]")
+            console.print("Double-check your Garmin Connect credentials.")
         elif error == "mfa_required":
-            console.print("Two-factor authentication (MFA) detected.")
-            console.print(
-                "\nGarmin MFA is not fully supported. Try creating an app-specific password."
-            )
+            console.print("\n[bold]MFA code required but not provided[/bold]")
+            console.print("The authentication library should have prompted for your MFA code.")
+            console.print("If you didn't see a prompt, please report this issue.")
         else:
-            console.print(f"\nDetails: {error}")
+            console.print(f"\n[bold]Error details:[/bold] {error}")
 
         raise typer.Exit(1)

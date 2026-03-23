@@ -1,28 +1,29 @@
-"""Garmin Connect API client wrapper using garminconnect library."""
+"""Garmin Connect API client wrapper with MFA support via garth tokens."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from pathlib import Path
 
+import garth
 from garminconnect import Garmin
 
 
 class GarminClient:
-    """Wrapper around garminconnect library for Garmin Connect API access."""
+    """Wrapper around garminconnect library with garth token support for MFA."""
 
-    def __init__(self, username: str, password: str):
-        """Initialize Garmin client with credentials.
+    def __init__(self, tokens_dir: Path | None = None):
+        """Initialize Garmin client with optional token directory.
 
         Args:
-            username: Garmin Connect email/username
-            password: Garmin Connect password
+            tokens_dir: Directory to store garth tokens (default: ~/.local/share/openactivity/garmin)
         """
-        self.username = username
-        self.client = Garmin(username, password)
+        self.tokens_dir = tokens_dir or (Path.home() / ".local" / "share" / "openactivity" / "garmin")
+        self.tokens_dir.mkdir(parents=True, exist_ok=True)
+        self.client = None
         self._authenticated = False
 
-    def authenticate(self) -> tuple[bool, str | None]:
-        """Authenticate with Garmin Connect.
+    def authenticate_with_tokens(self) -> tuple[bool, str | None]:
+        """Authenticate using saved garth tokens.
 
         Returns:
             Tuple of (success, error_message)
@@ -30,9 +31,56 @@ class GarminClient:
             - (False, error_msg) if authentication failed
         """
         try:
-            self.client.login()
+            # Configure garth to use our token directory
+            garth.configure(tokenstore=str(self.tokens_dir))
+
+            # Try to resume session from saved tokens
+            garth.resume()
+
+            # Create Garmin client using the authenticated garth session
+            self.client = Garmin(session_data=garth.client.dumps())
             self._authenticated = True
             return True, None
+
+        except Exception as e:
+            error_str = str(e)
+
+            # Detect specific error types
+            if "FileNotFoundError" in error_str or "No such file" in error_str:
+                return False, "no_tokens"
+            elif "429" in error_str or "Too Many Requests" in error_str:
+                return False, "rate_limit"
+            elif "401" in error_str or "403" in error_str:
+                return False, "invalid_tokens"
+            else:
+                return False, f"unknown: {error_str}"
+
+    def authenticate_with_credentials(self, username: str, password: str) -> tuple[bool, str | None]:
+        """Authenticate with username/password (supports MFA prompts).
+
+        This will prompt for MFA code if required.
+
+        Args:
+            username: Garmin Connect email/username
+            password: Garmin Connect password
+
+        Returns:
+            Tuple of (success, error_message)
+            - (True, None) if authentication succeeded
+            - (False, error_msg) if authentication failed
+        """
+        try:
+            # Configure garth to use our token directory
+            garth.configure(tokenstore=str(self.tokens_dir))
+
+            # Login with garth (handles MFA prompts)
+            garth.login(username, password)
+
+            # Create Garmin client using the authenticated session
+            self.client = Garmin(session_data=garth.client.dumps())
+            self._authenticated = True
+            return True, None
+
         except Exception as e:
             self._authenticated = False
             error_str = str(e)
@@ -61,7 +109,7 @@ class GarminClient:
         Returns:
             List of activity dictionaries from Garmin API
         """
-        if not self._authenticated:
+        if not self._authenticated or not self.client:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
         return self.client.get_activities(start, limit)
@@ -75,7 +123,7 @@ class GarminClient:
         Returns:
             Activity detail dictionary from Garmin API
         """
-        if not self._authenticated:
+        if not self._authenticated or not self.client:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
         return self.client.get_activity(activity_id)
@@ -86,7 +134,7 @@ class GarminClient:
         Returns:
             User profile dictionary from Garmin API
         """
-        if not self._authenticated:
+        if not self._authenticated or not self.client:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
         return self.client.get_full_profile()
@@ -100,7 +148,7 @@ class GarminClient:
         Returns:
             Daily stats dictionary (resting HR, stress, steps, etc.)
         """
-        if not self._authenticated:
+        if not self._authenticated or not self.client:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
         return self.client.get_stats(date)
@@ -114,7 +162,7 @@ class GarminClient:
         Returns:
             Sleep data dictionary from Garmin API
         """
-        if not self._authenticated:
+        if not self._authenticated or not self.client:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
         return self.client.get_sleep_data(date)
@@ -128,7 +176,7 @@ class GarminClient:
         Returns:
             HRV data dictionary from Garmin API
         """
-        if not self._authenticated:
+        if not self._authenticated or not self.client:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
         return self.client.get_hrv_data(date)
@@ -143,7 +191,7 @@ class GarminClient:
         Returns:
             List of Body Battery data points
         """
-        if not self._authenticated:
+        if not self._authenticated or not self.client:
             raise RuntimeError("Not authenticated. Call authenticate() first.")
 
         return self.client.get_body_battery(start_date, end_date)
