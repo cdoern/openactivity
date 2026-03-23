@@ -31,24 +31,21 @@ class GarminClient:
             - (False, error_msg) if authentication failed
         """
         try:
-            # Configure garth to use our token directory
-            garth.configure(tokenstore=str(self.tokens_dir))
-
-            # Try to resume session from saved tokens
-            garth.resume()
+            # Load saved tokens from our token directory
+            garth.resume(str(self.tokens_dir))
 
             # Create Garmin client using the authenticated garth session
             self.client = Garmin(session_data=garth.client.dumps())
             self._authenticated = True
             return True, None
 
+        except FileNotFoundError:
+            return False, "no_tokens"
         except Exception as e:
             error_str = str(e)
 
             # Detect specific error types
-            if "FileNotFoundError" in error_str or "No such file" in error_str:
-                return False, "no_tokens"
-            elif "429" in error_str or "Too Many Requests" in error_str:
+            if "429" in error_str or "Too Many Requests" in error_str:
                 return False, "rate_limit"
             elif "401" in error_str or "403" in error_str:
                 return False, "invalid_tokens"
@@ -70,11 +67,11 @@ class GarminClient:
             - (False, error_msg) if authentication failed
         """
         try:
-            # Configure garth to use our token directory
-            garth.configure(tokenstore=str(self.tokens_dir))
-
-            # Login with garth (handles MFA prompts)
+            # Login with garth (handles MFA prompts interactively)
             garth.login(username, password)
+
+            # Save tokens to our directory for future use
+            garth.save(str(self.tokens_dir))
 
             # Create Garmin client using the authenticated session
             self.client = Garmin(session_data=garth.client.dumps())

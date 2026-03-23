@@ -63,8 +63,8 @@ def is_authenticated() -> bool:
         True if garth tokens are saved
     """
     tokens_dir = Path.home() / ".local" / "share" / "openactivity" / "garmin"
-    token_file = tokens_dir / "tokens"
-    return token_file.exists()
+    # Garth saves multiple files - check if the directory exists and has content
+    return tokens_dir.exists() and any(tokens_dir.iterdir())
 
 
 def logout() -> None:
