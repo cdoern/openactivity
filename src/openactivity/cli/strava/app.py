@@ -10,6 +10,7 @@ from openactivity.cli.strava.analyze import app as analyze_app
 from openactivity.cli.strava.athlete import show_athlete
 from openactivity.cli.strava.auth import app as auth_app
 from openactivity.cli.strava.export import app as export_app
+from openactivity.cli.strava.predict import app as predict_app
 from openactivity.cli.strava.records import app as records_app
 from openactivity.cli.strava.segments import (
     app as segments_app,
@@ -31,6 +32,7 @@ app.add_typer(sync_app, name="sync")
 app.add_typer(activities_app, name="activities")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(segments_app, name="segments")
+app.add_typer(predict_app, name="predict")
 app.add_typer(records_app, name="records")
 
 # Register the export app under "activities export"
