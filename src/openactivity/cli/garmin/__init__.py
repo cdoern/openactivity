@@ -1,1 +1,1 @@
-"""Garmin Connect CLI commands."""
+"""Garmin CLI commands - FIT file import."""

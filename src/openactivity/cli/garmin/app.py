@@ -1,14 +1,12 @@
-"""Garmin Connect command group."""
+"""Garmin Connect command group - FIT file import."""
 
 from __future__ import annotations
 
 import typer
 
-from openactivity.cli.garmin.auth import garmin_auth
-from openactivity.cli.garmin.sync import garmin_sync
+from openactivity.cli.garmin.import_cmd import garmin_import
 
-app = typer.Typer(help="Garmin Connect commands")
+app = typer.Typer(help="Garmin Connect commands (FIT file import)")
 
 # Register subcommands
-app.command("auth")(garmin_auth)
-app.command("sync")(garmin_sync)
+app.command("import")(garmin_import)

@@ -1,1 +1,1 @@
-"""Garmin Connect provider for activity and health data."""
+"""Garmin FIT file parser and importer."""

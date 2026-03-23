@@ -1,193 +1,246 @@
-# Feature Specification: Garmin Connect Provider
+# Feature Specification: Garmin FIT File Import
 
 **Feature Branch**: `010-garmin-provider`
 **Created**: 2026-03-23
+**Updated**: 2026-03-23
 **Status**: Draft
-**Input**: User description: "Add Garmin Connect as a second data provider, following the existing provider interface pattern. This unlocks HRV, Body Battery, sleep, respiration, and other health metrics that Strava doesn't have."
+**Input**: User description: "Add Garmin Connect as a second data provider, following the existing provider interface pattern."
 
-## User Scenarios & Testing *(mandatory)*
+## Context & Approach
 
-### User Story 1 - Authenticate with Garmin Connect (Priority: P1)
+**Original Plan**: Use Garmin's unofficial API (`garminconnect` library) for automated sync.
 
-As a user with a Garmin Connect account, I want to authenticate the CLI with my Garmin credentials so I can access my Garmin fitness and health data locally.
+**Reality**: Garmin actively blocks automated API access through rate limiting and bot detection. Even with valid credentials, API requests are unreliable and frequently result in 24-48 hour bans.
 
-**Why this priority**: Without authentication, no Garmin data can be synced. This is the foundational requirement for all other Garmin features.
+**Solution**: Use FIT file parsing instead of API access:
+- FIT files are Garmin's native activity format
+- 100% reliable (no API calls)
+- Contains all activity data (GPS, HR, power, cadence, etc.)
+- Available from multiple sources (device, Garmin Connect folder, bulk export)
 
-**Independent Test**: User runs `openactivity garmin auth`, provides username and password, and receives confirmation that credentials are stored. Subsequent commands can access Garmin data without re-authentication.
-
-**Acceptance Scenarios**:
-
-1. **Given** the user has a valid Garmin Connect account, **When** they run `openactivity garmin auth` and provide valid credentials, **Then** credentials are securely stored in the system keyring and a success message is displayed
-2. **Given** the user provides invalid credentials, **When** they run `openactivity garmin auth`, **Then** an error message is displayed and they can retry
-3. **Given** credentials are already stored, **When** the user runs `openactivity garmin auth` again, **Then** they are prompted to confirm overwriting existing credentials
-4. **Given** the user wants to check auth status, **When** they run `openactivity garmin auth --status`, **Then** they see whether they are authenticated and when credentials were last verified
+**Trade-off**: Advanced health metrics (HRV, Body Battery, detailed sleep) are NOT in FIT files. Users can import these separately from Garmin's bulk export CSVs.
 
 ---
 
-### User Story 2 - Sync Garmin Activities (Priority: P1)
+## User Scenarios & Testing
 
-As a user, I want to sync my Garmin activities to local storage so I can analyze my workouts offline alongside my Strava data.
+### User Story 1 - Import from Connected Device (Priority: P1) 🎯 MVP
 
-**Why this priority**: Activity sync is the core value proposition - without it, users cannot access their Garmin workout data. This must work independently before any advanced features.
+As a user with a Garmin device, I want to import activities directly from my watch when it's connected via USB so I can analyze my workouts locally without any API hassles.
 
-**Independent Test**: User runs `openactivity garmin sync`, and their recent Garmin activities appear in the local database. Running `openactivity activities list` shows a merged view with both Strava and Garmin activities with provider badges.
+**Why this priority**: Most straightforward and reliable method. Works immediately with no setup beyond connecting device.
+
+**Independent Test**: User connects Garmin device via USB and runs `openactivity garmin import --from-device`. Activities from the device appear in the local database. Running `openactivity activities list` shows them.
 
 **Acceptance Scenarios**:
 
-1. **Given** the user is authenticated with Garmin, **When** they run `openactivity garmin sync` for the first time, **Then** all recent activities from Garmin are downloaded and stored locally
-2. **Given** the user has previously synced, **When** they run `openactivity garmin sync` again, **Then** only new or updated activities since last sync are downloaded (incremental sync)
-3. **Given** an activity exists in both Strava and Garmin, **When** activities are synced from both providers, **Then** the system detects the duplicate and links them as the same activity
-4. **Given** the user runs sync with no auth, **When** they attempt to sync, **Then** they receive an error directing them to run `openactivity garmin auth` first
+1. **Given** a Garmin device is connected via USB, **When** the user runs `openactivity garmin import --from-device`, **Then** all FIT files from the device are parsed and imported as activities
+2. **Given** some activities were previously imported, **When** the user imports again from device, **Then** only new activities are imported (duplicates are skipped)
+3. **Given** no device is connected, **When** the user runs import from device, **Then** they see a helpful error with troubleshooting steps
+4. **Given** import completes, **When** the command finishes, **Then** the user sees a summary of files processed, activities imported, and any errors
 
 ---
 
-### User Story 3 - Sync Garmin Health Data (Priority: P2)
+### User Story 2 - Import from Garmin Connect Folder (Priority: P1)
 
-As a user, I want to sync my daily health metrics (HRV, Body Battery, sleep, stress) from Garmin so I can track my recovery and readiness over time.
+As a user who syncs via Garmin Express, I want to import activities from the local Garmin Connect folder so I can get my data without connecting my device every time.
 
-**Why this priority**: Health data is unique to Garmin and provides value beyond basic activity tracking, but activities must sync first (P1) for this data to be contextually useful.
+**Why this priority**: Convenient for users who already use Garmin Express for cloud sync. Files appear automatically after sync.
 
-**Independent Test**: User runs `openactivity garmin sync` and their daily health summaries are stored locally. User can query `openactivity garmin daily --last 7d` to see recent health metrics.
+**Independent Test**: User syncs device with Garmin Express, then runs `openactivity garmin import --from-connect`. Activities appear in local database.
 
 **Acceptance Scenarios**:
 
-1. **Given** the user is authenticated with Garmin, **When** they run `openactivity garmin sync`, **Then** daily summaries (HRV, Body Battery, stress, resting HR, respiration, SpO2, steps, sleep score) are downloaded and stored
-2. **Given** sleep data is available, **When** daily summaries are synced, **Then** sleep sessions with detailed phase breakdowns (deep/light/REM/awake) are stored
-3. **Given** the user wants to view recent health data, **When** they run `openactivity garmin daily --last 7d`, **Then** they see a summary of health metrics for the past 7 days
+1. **Given** Garmin Express is installed and has synced data, **When** the user runs `openactivity garmin import --from-connect`, **Then** FIT files from the Garmin Connect folder are imported
+2. **Given** the Garmin Connect folder doesn't exist, **When** the user attempts to import, **Then** they see a helpful error explaining how to set up Garmin Express
+3. **Given** new activities are synced via Garmin Express, **When** the user re-runs import from Connect folder, **Then** only new activities are imported
 
 ---
 
-### User Story 4 - Unified Activity Commands (Priority: P2)
+### User Story 3 - Import from Bulk Export ZIP (Priority: P1)
 
-As a user with both Strava and Garmin accounts, I want to use simple commands like `openactivity activity <ID>` and `openactivity activities list` that work across both providers so I don't need to remember which provider an activity came from.
+As a user, I want to import my complete Garmin history from a bulk export ZIP file so I can migrate all my historical data at once.
 
-**Why this priority**: Improves user experience significantly but requires both providers to be functional first. Makes the tool feel cohesive rather than fragmented.
+**Why this priority**: Essential for initial setup and historical data migration. Garmin's official export is the most reliable way to get all data.
 
-**Independent Test**: User runs `openactivity activities list` and sees activities from all providers in a single view with provider badges. User runs `openactivity activity <ID>` with any activity ID and sees details regardless of provider.
+**Independent Test**: User downloads bulk export from Garmin (Settings → Data Management → Export Your Data), then runs `openactivity garmin import --from-zip ~/Downloads/export.zip`. All activities are imported.
 
 **Acceptance Scenarios**:
 
-1. **Given** the user has synced activities from both Strava and Garmin, **When** they run `openactivity activities list`, **Then** they see a merged chronological list with provider badges indicating source (Strava/Garmin/Both for duplicates)
-2. **Given** an activity exists in the database, **When** the user runs `openactivity activity <ID>` with any valid ID (Strava or Garmin), **Then** the system auto-detects the provider and displays activity details
-3. **Given** an activity is linked as a duplicate, **When** viewed, **Then** the display shows it came from both providers and which was the primary source
-4. **Given** the user filters activities, **When** they use `--provider strava` or `--provider garmin`, **Then** only activities from that provider are shown
+1. **Given** a Garmin bulk export ZIP file, **When** the user runs `openactivity garmin import --from-zip PATH`, **Then** all FIT files in the ZIP are extracted and imported
+2. **Given** the ZIP contains thousands of activities, **When** import runs, **Then** progress is shown and the process completes successfully
+3. **Given** an invalid or corrupted ZIP, **When** import is attempted, **Then** a clear error message is shown
 
 ---
 
-### User Story 5 - View Athlete Profile from Garmin (Priority: P3)
+### User Story 4 - Import from Custom Directory (Priority: P2)
 
-As a user, I want to view my Garmin athlete profile information so I can verify my account details and settings are correct.
+As a user with FIT files in a custom location, I want to import from any directory so I have flexibility in how I organize my data.
 
-**Why this priority**: Nice to have for verification but not critical for core functionality. Most users care more about activity and health data.
+**Why this priority**: Useful but not critical - most users will use device/Connect/ZIP options.
 
-**Independent Test**: User runs `openactivity garmin athlete` and sees their Garmin profile information (name, age, gender, weight, max HR, zones).
+**Independent Test**: User places FIT files in a custom folder and runs `openactivity garmin import --from-directory ~/my-activities/`. Activities are imported.
 
 **Acceptance Scenarios**:
 
-1. **Given** the user is authenticated, **When** they run `openactivity garmin athlete`, **Then** they see their Garmin Connect profile information including name, age, gender, and fitness settings
-2. **Given** the user wants JSON output, **When** they run `openactivity garmin athlete --json`, **Then** they receive profile data in JSON format
+1. **Given** FIT files in a custom directory, **When** the user runs `openactivity garmin import --from-directory PATH`, **Then** all FIT files (recursive search) are imported
+2. **Given** a directory with mixed file types, **When** import runs, **Then** only .fit/.FIT files are processed, others are ignored
+
+---
+
+### User Story 5 - Unified Activity Commands (Priority: P2)
+
+As a user with both Strava and Garmin data, I want to use `openactivity activity <ID>` and `openactivity activities list` to see all my activities regardless of provider.
+
+**Why this priority**: Improves UX but requires data from both providers first.
+
+**Independent Test**: User runs `openactivity activities list` and sees activities from both providers with badges. Running `openactivity activity <ID>` works with any ID.
+
+**Acceptance Scenarios**:
+
+1. **Given** activities from both Strava and Garmin, **When** the user runs `openactivity activities list`, **Then** they see a merged view with provider badges
+2. **Given** an activity ID, **When** the user runs `openactivity activity <ID>`, **Then** the system auto-detects the provider and shows details
+3. **Given** the user wants to filter, **When** they use `--provider garmin`, **Then** only Garmin activities are shown
 
 ---
 
 ### Edge Cases
 
-- What happens when Garmin API is down or rate-limited during sync?
-- How does the system handle activities that exist in both providers but with slightly different timestamps or durations?
-- What if a user changes their Garmin password - how do they update stored credentials?
-- How does deduplication work when one provider has more detailed data than the other?
-- What happens when health data is missing for certain days?
-- How are activities matched for deduplication when types differ slightly between providers (e.g., "Run" vs "Running")?
+- What happens when a FIT file is corrupted or unparseable?
+- How does the system handle FIT files that aren't activities (monitoring files, settings files)?
+- What if the same activity is imported twice from different sources (device and ZIP)?
+- How are provider_ids assigned to ensure uniqueness?
+- What happens when no FIT files are found in the specified location?
 
-## Requirements *(mandatory)*
+---
 
-### Functional Requirements
+## Functional Requirements *(mandatory)*
 
-#### Authentication & Credentials
-- **FR-001**: System MUST provide a command to authenticate with Garmin Connect using username and password
-- **FR-002**: System MUST store Garmin credentials securely in the system keyring
-- **FR-003**: System MUST validate credentials on first use and provide clear error messages for authentication failures
-- **FR-004**: System MUST allow users to check authentication status without triggering a full sync
+### Import Sources
 
-#### Activity Syncing
-- **FR-005**: System MUST sync activities from Garmin Connect to local storage
-- **FR-006**: System MUST support incremental sync, fetching only new or updated activities after the initial sync
-- **FR-007**: System MUST store activity provider (Strava/Garmin) and provider-specific ID in the database
-- **FR-008**: System MUST detect and link duplicate activities from multiple providers based on start time (within 60 seconds), activity type, and duration (within 5% tolerance)
-- **FR-009**: System MUST sync activity details including: distance, duration, type, start time, elevation, heart rate data, pace/speed, calories
-- **FR-010**: System MUST handle activity types consistently across providers (map Garmin types to standardized internal types)
+**FR-001**: System shall support importing FIT files from a connected Garmin device (USB)
+**FR-002**: System shall support importing FIT files from Garmin Connect local folder (created by Garmin Express)
+**FR-003**: System shall support importing FIT files from Garmin bulk export ZIP files
+**FR-004**: System shall support importing FIT files from any custom directory (recursive search)
+**FR-005**: System shall detect and skip already-imported activities (based on provider_id)
 
-#### Health Data Syncing
-- **FR-011**: System MUST sync daily health summaries from Garmin including: resting heart rate, HRV, Body Battery, stress score, sleep score, steps, respiration rate, SpO2
-- **FR-012**: System MUST sync sleep session details including: start/end times, total duration, deep/light/REM/awake phase durations, sleep score
-- **FR-013**: System MUST handle missing health data gracefully (some metrics may not be available for all users or all days)
+### FIT File Parsing
 
-#### Provider-Agnostic Commands
-- **FR-014**: System MUST provide `openactivity activity <ID>` command that works with IDs from any provider
-- **FR-015**: System MUST auto-detect which provider an activity belongs to when given an ID
-- **FR-016**: System MUST provide `openactivity activities list` command that shows merged view from all providers
-- **FR-017**: System MUST display provider badges in activity lists (Strava/Garmin/Both)
-- **FR-018**: System MUST allow filtering by provider using `--provider` flag
-- **FR-019**: System MUST continue to support existing provider-specific commands (`openactivity strava segments`, etc.)
+**FR-006**: System shall parse FIT files using the `fitparse` library (battle-tested, widely used)
+**FR-007**: System shall extract activity metadata: name, type, start time, distance, duration, elevation
+**FR-008**: System shall extract activity metrics: heart rate, power, cadence, speed (when available)
+**FR-009**: System shall handle missing or optional fields gracefully (e.g., power data not on all devices)
+**FR-010**: System shall skip non-activity FIT files (monitoring, settings) without errors
 
-#### Command Structure
-- **FR-020**: System MUST provide new command group `openactivity garmin` with subcommands: auth, sync, athlete, activities, daily
-- **FR-021**: System MUST support `openactivity garmin auth` for authentication
-- **FR-022**: System MUST support `openactivity garmin sync` for data synchronization
-- **FR-023**: System MUST support `openactivity garmin athlete` to view profile
-- **FR-024**: System MUST support `openactivity garmin daily` to view health data
-- **FR-025**: System MUST support `openactivity garmin activities list` as provider-specific alternative to unified list
+### Data Storage
 
-#### Data Management
-- **FR-026**: System MUST maintain referential integrity between activities and their provider sources
-- **FR-027**: System MUST persist sync state to enable incremental updates
-- **FR-028**: System MUST handle concurrent syncs gracefully (e.g., if user runs both `strava sync` and `garmin sync` simultaneously)
+**FR-011**: Imported activities shall be stored with provider='garmin' in the activities table
+**FR-012**: Activities shall have unique provider_ids generated from file metadata (timestamp-based)
+**FR-013**: System shall normalize Garmin sport types to standard types (Run, Ride, Swim, etc.)
+**FR-014**: System shall preserve Garmin-specific sport type in sport_type field
 
-### Key Entities
+### User Experience
 
-- **GarminDailySummary**: Daily health metrics snapshot containing date, resting HR, HRV, Body Battery level, stress score, sleep score, step count, respiration rate, SpO2 percentage. One record per day per user.
+**FR-015**: Import command shall show progress (files processed, activities imported, skipped, errors)
+**FR-016**: Import command shall provide helpful error messages with troubleshooting steps
+**FR-017**: Import command shall complete in reasonable time (thousands of activities < 5 minutes)
+**FR-018**: System shall provide clear documentation on how to get FIT files from each source
 
-- **GarminSleepSession**: Sleep tracking data containing start timestamp, end timestamp, total duration, deep sleep duration, light sleep duration, REM sleep duration, awake duration, sleep quality score. May have multiple sessions per day (e.g., naps).
+### Multi-Provider Support
 
-- **Activity (Enhanced)**: Existing activity entity extended with provider field (enum: strava/garmin) and provider_id field to support multi-provider data. Enables deduplication and source tracking.
+**FR-019**: Unified `activities list` command shall show Garmin and Strava activities together
+**FR-020**: Unified `activity <ID>` command shall work with activity IDs from any provider
+**FR-021**: Activities list shall display provider badges ([Garmin], [Strava], [Garmin+Strava] for linked)
+**FR-022**: System shall support filtering by provider using --provider flag
 
-- **ActivityDuplication**: Link table connecting duplicate activities from different providers, storing which activity is primary and metadata about the match confidence.
+---
 
 ## Success Criteria *(mandatory)*
 
-### Measurable Outcomes
+**Objective**: Enable users to reliably import and analyze Garmin activity data without API dependency.
 
-- **SC-001**: Users can authenticate with Garmin Connect in under 1 minute
-- **SC-002**: Initial sync of 100 activities completes in under 5 minutes
-- **SC-003**: Incremental sync detects and syncs new activities within 30 seconds of command execution
-- **SC-004**: Activity deduplication correctly identifies at least 95% of matching activities across providers
-- **SC-005**: Users can view merged activity lists from all providers without knowing provider-specific commands
-- **SC-006**: Health data (HRV, Body Battery, sleep) syncs successfully for users who have Garmin devices that track these metrics
-- **SC-007**: System handles Garmin API rate limits and errors gracefully without data loss
-- **SC-008**: All existing Strava-specific commands continue to work unchanged after Garmin provider is added
+**Measurable Outcomes**:
 
-## Assumptions
+1. **Import Reliability**: 100% success rate for valid FIT files (no API failures/rate limits)
+2. **Import Speed**: Process 1000 FIT files in under 2 minutes
+3. **Data Completeness**: All standard activity fields populated (distance, time, HR, etc.) from FIT data
+4. **User Experience**: Users can complete initial import (bulk export ZIP) in under 5 commands
+5. **Zero API Dependency**: No network requests required for activity import
 
-- Garmin Connect API access via `garminconnect` Python library provides sufficient endpoints for activity and health data
-- Users have valid Garmin Connect accounts with associated devices that track activities and health metrics
-- Activity deduplication tolerance (60 seconds time difference, 5% duration difference) is sufficient for most real-world cases
-- System keyring is available on user's platform for secure credential storage
-- Garmin and Strava use compatible activity type taxonomies that can be normalized
-- Users understand that some Garmin devices may not track all health metrics (HRV, Body Battery, etc.)
-- Database schema can be modified to add provider fields without breaking existing Strava functionality
+**Qualitative Outcomes**:
 
-## Dependencies
+- Users are not blocked by Garmin's rate limiting
+- Import process is self-service (no authentication required)
+- Clear path from "I have a Garmin" to "I have all my data"
+- Works offline (no internet required after downloading export)
 
-- Requires `garminconnect` Python library for Garmin Connect API access
-- Requires system keyring for secure credential storage
-- Database migration to add `provider` and `provider_id` fields to Activity model
-- Existing Strava sync infrastructure as a reference implementation pattern
+---
 
-## Out of Scope
+## Limitations & Out of Scope
 
-- Real-time sync or webhooks (both Strava and Garmin use polling-based sync)
-- Uploading activities from CLI to Garmin Connect (read-only access)
-- Advanced health analytics beyond raw data display (e.g., trend analysis, predictions)
-- Two-factor authentication for Garmin (not supported by garminconnect library)
-- Garmin Training Plans or Workout creation
-- Live tracking or real-time activity updates
-- Migration tools for moving data between providers
+**Health Data NOT in FIT Files** (deferred to future work):
+- Heart Rate Variability (HRV)
+- Body Battery scores
+- Detailed sleep phase analysis
+- Stress scores
+- Advanced physiological metrics
+
+**Rationale**: These metrics are proprietary Garmin calculations stored only in their cloud database, not in device FIT files. Future enhancement could parse CSV files from Garmin's bulk export to import this data separately.
+
+**No Automated Sync**: Unlike Strava (which has OAuth API), there is no automated background sync for Garmin. Users must manually import FIT files periodically.
+
+**Rationale**: Garmin's API is unreliable and results in user bans. Manual FIT import is the only sustainable approach.
+
+---
+
+## Assumptions *(if applicable)*
+
+1. **FIT File Availability**: Users can obtain FIT files via USB device connection, Garmin Express, or bulk export
+2. **Library Reliability**: `fitparse` library correctly parses Garmin FIT files (well-established, used in production by many projects)
+3. **File Format Stability**: Garmin's FIT file format remains stable (it's a published standard: FIT SDK)
+4. **User Technical Ability**: Users can connect USB devices, download ZIP files, and specify file paths
+5. **Single Athlete**: Initial implementation assumes one athlete per database (multi-athlete support is future work)
+
+---
+
+## Dependencies & Constraints
+
+**Technical Dependencies**:
+- `fitparse>=1.2.0` - FIT file parsing library
+- Python 3.12+ - Current project requirement
+- SQLAlchemy models already support multi-provider (added in earlier work)
+
+**Constraints**:
+- No network access required (offline-first approach)
+- Must work cross-platform (Linux, macOS, Windows device mount points differ)
+- FIT files only contain activity data, not advanced health metrics
+- Cannot automate discovery of new activities (user must initiate import)
+
+**Related Features**:
+- Depends on database schema changes (Activity.provider, Activity.provider_id fields)
+- Works alongside Strava provider (shared unified commands)
+- Future: CSV import for health data from Garmin bulk export
+
+---
+
+## Non-Functional Requirements
+
+**Performance**:
+- Import 1000 FIT files in < 2 minutes (average hardware)
+- Memory usage < 500MB for large imports (streaming file processing)
+- Incremental import completes in < 5 seconds (checking for duplicates)
+
+**Reliability**:
+- 100% success rate for valid FIT files
+- Graceful handling of corrupted files (skip with error message)
+- No data loss during import errors (transaction rollback)
+
+**Usability**:
+- Clear help text for each import option
+- Automatic device detection (no manual path entry when possible)
+- Progress feedback for long operations (thousands of files)
+
+**Maintainability**:
+- Use established library (`fitparse`) rather than custom parser
+- Minimal code surface area (< 500 lines for all import logic)
+- Clear separation: parsing (fit_parser.py) vs importing (importer.py) vs CLI (import_cmd.py)
