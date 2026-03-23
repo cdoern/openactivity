@@ -14,7 +14,7 @@ from openactivity.cli.root import get_global_state
 from openactivity.db.database import get_session, init_db
 from openactivity.output.errors import exit_with_error
 from openactivity.output.json import print_json
-from openactivity.providers.strava.sync import sync_activities, sync_athlete
+from openactivity.providers.strava.sync import sync_activities, sync_athlete, sync_segments
 
 console = Console()
 
@@ -165,3 +165,52 @@ def _start_background_sync(*, full: bool, detail: bool, use_json: bool) -> None:
         log.write(f"--- Sync finished at {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
 
     os._exit(0)
+
+
+@app.command("segments")
+def sync_segments_command() -> None:
+    """Sync only starred segments and their efforts.
+
+    Much faster than full sync - only fetches your starred segments
+    from Strava without re-syncing all activities.
+
+    Examples:
+        openactivity strava sync segments
+        openactivity strava sync segments --json
+    """
+    state = get_global_state()
+    use_json = state.get("json", False)
+
+    if not has_tokens():
+        exit_with_error(
+            "authentication_required",
+            "No stored credentials found for Strava.",
+            "Run 'openactivity strava auth' to connect your account.",
+            use_json=use_json,
+        )
+
+    init_db()
+    session = get_session()
+
+    try:
+        if not use_json:
+            console.print("Syncing starred segments...")
+
+        result = sync_segments(session)
+
+        if use_json:
+            print_json(result)
+        else:
+            console.print(
+                f"[green]✓[/green] Synced {result['segments']} starred segments "
+                f"with {result['efforts']} total efforts"
+            )
+    except Exception as e:
+        exit_with_error(
+            "sync_error",
+            f"Segment sync failed: {e}",
+            "Check your credentials with 'openactivity strava auth'.",
+            use_json=use_json,
+        )
+    finally:
+        session.close()
