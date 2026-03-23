@@ -49,7 +49,9 @@ def garmin_auth(
     console.print("\nAuthenticating with Garmin Connect...")
 
     # Attempt authentication
-    if auth.authenticate(username, password):
+    success, error = auth.authenticate(username, password)
+
+    if success:
         console.print("[green]✓ Authentication successful[/green]")
         console.print("Credentials stored securely in system keyring")
         console.print(
@@ -61,5 +63,31 @@ def garmin_auth(
         )
     else:
         console.print("[red]Error: Authentication failed[/red]")
-        console.print("Invalid username or password. Please try again.")
+
+        # Provide specific error messages
+        if error == "rate_limit":
+            console.print("\n[yellow]⚠ Rate Limit Exceeded[/yellow]")
+            console.print(
+                "Garmin is temporarily blocking login attempts from your IP address."
+            )
+            console.print("\n[bold]What to do:[/bold]")
+            console.print("  1. Wait 15-30 minutes before trying again")
+            console.print("  2. Ensure your username and password are correct")
+            console.print(
+                "  3. Try logging into https://connect.garmin.com in a browser first"
+            )
+            console.print(
+                "  4. If the issue persists, Garmin may be detecting automated access"
+            )
+        elif error == "invalid_credentials":
+            console.print("Invalid username or password.")
+            console.print("\nDouble-check your Garmin Connect credentials.")
+        elif error == "mfa_required":
+            console.print("Two-factor authentication (MFA) detected.")
+            console.print(
+                "\nGarmin MFA is not fully supported. Try creating an app-specific password."
+            )
+        else:
+            console.print(f"\nDetails: {error}")
+
         raise typer.Exit(1)

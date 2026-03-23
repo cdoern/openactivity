@@ -21,19 +21,31 @@ class GarminClient:
         self.client = Garmin(username, password)
         self._authenticated = False
 
-    def authenticate(self) -> bool:
+    def authenticate(self) -> tuple[bool, str | None]:
         """Authenticate with Garmin Connect.
 
         Returns:
-            True if authentication succeeded, False otherwise
+            Tuple of (success, error_message)
+            - (True, None) if authentication succeeded
+            - (False, error_msg) if authentication failed
         """
         try:
             self.client.login()
             self._authenticated = True
-            return True
-        except Exception:
+            return True, None
+        except Exception as e:
             self._authenticated = False
-            return False
+            error_str = str(e)
+
+            # Detect specific error types
+            if "429" in error_str or "Too Many Requests" in error_str:
+                return False, "rate_limit"
+            elif "401" in error_str or "403" in error_str:
+                return False, "invalid_credentials"
+            elif "MFA" in error_str or "two-factor" in error_str.lower():
+                return False, "mfa_required"
+            else:
+                return False, f"unknown: {error_str}"
 
     def is_authenticated(self) -> bool:
         """Check if client is authenticated."""

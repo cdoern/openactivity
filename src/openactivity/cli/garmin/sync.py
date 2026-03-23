@@ -29,10 +29,18 @@ def garmin_sync(
         raise typer.Exit(1)
 
     # Get authenticated client
-    client = auth.get_authenticated_client()
+    client, error = auth.get_authenticated_client()
     if not client:
         console.print("[red]Error: Failed to authenticate with stored credentials[/red]")
-        console.print("Run 'openactivity garmin auth' to re-authenticate.")
+
+        if error == "rate_limit":
+            console.print("\n[yellow]⚠ Rate Limit Exceeded[/yellow]")
+            console.print("Garmin is temporarily blocking requests. Wait 15-30 minutes and try again.")
+        elif error == "no_credentials":
+            console.print("Run 'openactivity garmin auth' to authenticate.")
+        else:
+            console.print("Run 'openactivity garmin auth' to re-authenticate.")
+
         raise typer.Exit(1)
 
     # Warning for full sync
