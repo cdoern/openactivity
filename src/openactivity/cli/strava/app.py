@@ -18,6 +18,7 @@ from openactivity.cli.strava.segments import (
 from openactivity.cli.strava.segments import (
     show_segment_efforts,
     show_segment_leaderboard,
+    show_segment_trend,
 )
 from openactivity.cli.strava.sync import app as sync_app
 
@@ -46,4 +47,5 @@ app.command("athlete")(show_athlete)
 segment_app = typer.Typer(name="segment", no_args_is_help=True)
 segment_app.command("efforts")(show_segment_efforts)
 segment_app.command("leaderboard")(show_segment_leaderboard)
+segment_app.command("trend")(show_segment_trend)
 app.add_typer(segment_app, name="segment")
