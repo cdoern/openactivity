@@ -51,6 +51,11 @@ def _migrate_db(engine) -> None:
                     )
         conn.commit()
 
+    # Run versioned migrations
+    from openactivity.db.migrations._001_add_garmin_support import migrate as migrate_001
+
+    migrate_001(engine)
+
 
 def init_db(db_path: Path | None = None) -> None:
     """Initialize database: create all tables if they don't exist."""

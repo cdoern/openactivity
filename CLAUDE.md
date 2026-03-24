@@ -12,6 +12,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-13
 - Python 3.12+ — existing projec + yper (CLI), rich (terminal output), sqlalchemy (ORM), scipy.stats (correlation) — scipy is new (008-correlation-engine)
 - Python 3.12+ (existing) + yper (CLI), rich (terminal output), sqlalchemy (ORM), scipy (linear regression) — all existing (009-segment-trends)
 - SQLite at `~/.local/share/openactivity/openactivity.db` — no schema changes, reads from existing `segments` and `segment_efforts` tables (009-segment-trends)
+- Python 3.12+ + typer (CLI), rich (output), sqlalchemy (ORM), keyring (credentials), garminconnect (Garmin API) (010-garmin-provider)
+- SQLite at `~/.local/share/openactivity/openactivity.db` (existing database, schema migration required) (010-garmin-provider)
 
 - Go 1.22+ + spf13/cobra (CLI), spf13/viper (config), gorm.io/driver/sqlite (storage), golang.org/x/oauth2 (auth), zalando/go-keyring (credentials), jedib0t/go-pretty (tables), go-echarts/go-echarts (charts), twpayne/go-gpx (GPX export) (001-strava-cli)
 
@@ -31,9 +33,9 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 010-garmin-provider: Added Python 3.12+ + typer (CLI), rich (output), sqlalchemy (ORM), keyring (credentials), garminconnect (Garmin API)
 - 009-segment-trends: Added Python 3.12+ (existing) + yper (CLI), rich (terminal output), sqlalchemy (ORM), scipy (linear regression) — all existing
 - 008-correlation-engine: Added Python 3.12+ — existing projec + yper (CLI), rich (terminal output), sqlalchemy (ORM), scipy.stats (correlation) — scipy is new
-- 007-race-predictor: Added Python 3.12+ — existing projec + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing
 
 
 <!-- MANUAL ADDITIONS START -->

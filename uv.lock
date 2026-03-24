@@ -390,6 +390,12 @@ wheels = [
 ]
 
 [[package]]
+name = "fitparse"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/ed/5637fe96c56d55dfa6317ab16745f9a83ef2690d093cee8f0b59f983675f/fitparse-1.2.0.tar.gz", hash = "sha256:2d691022452dea6dabad13cc6e017ca467fe8a3a895cd3ac67a50a7bb716b4a9", size = 65716, upload-time = "2020-09-07T03:27:21.926Z" }
+
+[[package]]
 name = "flexcache"
 version = "0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -852,6 +858,7 @@ name = "openactivity"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "fitparse" },
     { name = "gpxpy" },
     { name = "httpx" },
     { name = "keyring" },
@@ -874,6 +881,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fitparse", specifier = ">=1.2.0" },
     { name = "gpxpy", specifier = ">=1.6" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "keyring", specifier = ">=25.0" },

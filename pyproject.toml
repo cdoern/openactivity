@@ -17,6 +17,7 @@ dependencies = [
     "rich>=13.0",
     "sqlalchemy>=2.0",
     "stravalib>=2.0",
+    "fitparse>=1.2.0",
     "keyring>=25.0",
     "matplotlib>=3.8",
     "gpxpy>=1.6",
