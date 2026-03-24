@@ -1,6 +1,6 @@
 # openactivity
 
-CLI tool for pulling, analyzing, and exporting fitness activity data from providers like Strava.
+CLI tool for pulling, analyzing, and exporting fitness activity data from Strava and Garmin.
 
 openactivity syncs your data to a local SQLite database and lets you query, analyze, and export it offline. It surfaces insights that fitness platforms don't readily show — cross-activity zone distributions, long-term pace trends, power curves, and more.
 
@@ -18,44 +18,59 @@ pipx install openactivity
 
 Requires Python 3.12+.
 
+**For Garmin device import (newer watches):** `brew install libmtp` (macOS) or `sudo apt install mtp-tools` (Linux). Not needed if importing from ZIP exports.
+
 ## Quick Start
 
-### 1. Register a Strava API app
-
-Go to [strava.com/settings/api](https://www.strava.com/settings/api) and create an application. Set the Authorization Callback Domain to `localhost`.
-
-### 2. Authenticate
+### Strava
 
 ```bash
+# 1. Register an app at strava.com/settings/api (callback domain: localhost)
+# 2. Authenticate
 openactivity strava auth
-```
-
-Enter your Client ID and Client Secret when prompted, then authorize in your browser.
-
-### 3. Sync your data
-
-```bash
+# 3. Sync
 openactivity strava sync
 ```
 
-First sync fetches all activities. Subsequent syncs are incremental.
-
-### 4. Explore
+### Garmin
 
 ```bash
-openactivity strava activities list
-openactivity strava activity 12345678
-openactivity strava athlete
+# Import directly from a connected Garmin device (USB)
+openactivity garmin import --from-device
+
+# Or import from a Garmin Connect bulk export ZIP
+openactivity garmin import --from-zip ~/Downloads/export.zip
+
+# Or import from a directory of FIT files
+openactivity garmin import --from-directory ~/my-activities/
+```
+
+### Browse all your data
+
+```bash
+# Unified commands work across all providers
+openactivity activities list
+openactivity activities list --provider garmin --type Run
+openactivity activity 12345678
 ```
 
 ## Commands
 
 ```
 openactivity
+├── activities
+│   └── list                    # List activities from all providers
+├── activity <ID>               # View activity detail (any provider)
 ├── config
 │   ├── list                    # Show all config values
 │   ├── get <key>               # Get a config value
 │   └── set <key> <value>       # Set a config value
+├── garmin
+│   └── import                  # Import from Garmin FIT files
+│       ├── --from-device       # Connected Garmin watch (USB)
+│       ├── --from-zip PATH     # Garmin Connect bulk export
+│       ├── --from-connect      # Garmin Express local folder
+│       └── --from-directory    # Custom directory of FIT files
 └── strava
     ├── auth                    # OAuth setup
     │   └── revoke              # Remove credentials
@@ -69,15 +84,29 @@ openactivity
     │   ├── summary             # Training volume over time
     │   ├── pace                # Pace trend analysis
     │   ├── zones               # HR/power zone distribution
+    │   ├── compare             # Compare two time ranges
+    │   ├── effort              # Grade-adjusted pace trends
+    │   ├── blocks              # Training periodization detection
+    │   ├── correlate           # Cross-metric correlation
     │   └── power-curve         # Best power for key durations
+    ├── predict                 # Race time predictions
+    ├── records
+    │   ├── list                # Personal records
+    │   ├── history             # PR progression
+    │   └── scan                # Scan activities for PRs
     ├── segments
     │   └── list                # List starred segments
     └── segment <ID>
         ├── efforts             # View segment efforts
+        ├── trend               # Performance trend analysis
         └── leaderboard         # View leaderboard
 ```
 
 ## Key Features
+
+**Multi-provider**: Import from both Strava (API sync) and Garmin (FIT file import). Unified commands show activities from all providers with `[Strava]`/`[Garmin]` badges. Filter with `--provider`.
+
+**Garmin device support**: Newer watches (Forerunner 265/965, Fenix 7+, Venu 3) are auto-detected via MTP. Older watches mount as USB drives. Also supports bulk export ZIP and custom directories.
 
 **Local-first**: All data stored in SQLite at `~/.local/share/openactivity/openactivity.db`. List, analyze, and export commands never hit the network.
 
