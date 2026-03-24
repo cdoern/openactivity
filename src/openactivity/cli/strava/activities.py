@@ -11,6 +11,7 @@ from rich.table import Table
 from openactivity.cli.root import get_global_state
 from openactivity.db.database import get_session, init_db
 from openactivity.db.queries import (
+    bulk_link_activities,
     count_activities,
     get_activities,
     get_activity_by_id,
@@ -19,6 +20,7 @@ from openactivity.db.queries import (
     get_gear,
     get_laps,
     get_provider_badge,
+    unlink_activity,
 )
 from openactivity.output.errors import exit_with_error
 from openactivity.output.json import print_json
@@ -177,6 +179,141 @@ def list_activities(
             f"\nShowing {len(activities)} of {total} activities. "
             f"Use --limit and --offset for pagination."
         )
+    finally:
+        session.close()
+
+
+@app.command("link")
+def link_command(
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview matches without creating links."
+    ),
+    unlink_id: int | None = typer.Option(
+        None, "--unlink", help="Remove the link for this activity ID."
+    ),
+) -> None:
+    """Link matching activities across providers (Strava + Garmin).
+
+    Scans for activities recorded on both platforms and links them.
+    Linked activities show a [Strava+Garmin] badge in activity listings.
+
+    Examples:
+        openactivity activities link
+        openactivity activities link --dry-run
+        openactivity activities link --unlink 42
+        openactivity activities link --json
+    """
+    state = get_global_state()
+    use_json = state.get("json", False)
+
+    init_db()
+    session = get_session()
+
+    try:
+        # Handle unlink
+        if unlink_id is not None:
+            info = unlink_activity(session, unlink_id)
+            if not info:
+                if use_json:
+                    print_json({"error": "no_link", "activity_id": unlink_id})
+                else:
+                    console.print(
+                        f"[red]Activity #{unlink_id} is not linked to another provider.[/red]"
+                    )
+                raise typer.Exit(1)
+
+            if use_json:
+                print_json({"unlinked": info})
+            else:
+                strava_name = info.get("strava_name") or "Unknown"
+                garmin_name = info.get("garmin_name") or "Unknown"
+                console.print(
+                    f"[green]✓[/green] Removed link for activity #{unlink_id} "
+                    f"(Strava: {strava_name} ↔ Garmin: {garmin_name})"
+                )
+            return
+
+        # Check we have activities from both providers
+        from openactivity.db.models import Activity
+
+        strava_count = session.query(Activity).filter_by(provider="strava").count()
+        garmin_count = session.query(Activity).filter_by(provider="garmin").count()
+
+        if strava_count == 0 and garmin_count == 0:
+            if use_json:
+                print_json({"error": "no_activities"})
+            else:
+                console.print(
+                    "[red]No activities found.[/red] "
+                    "Run `strava sync` or `garmin import` first."
+                )
+            raise typer.Exit(1)
+
+        if strava_count == 0 or garmin_count == 0:
+            present = "strava" if strava_count > 0 else "garmin"
+            if use_json:
+                print_json({"error": "single_provider", "provider": present})
+            else:
+                console.print(
+                    f"Only [bold]{present}[/bold] activities found. "
+                    "Import from another provider to enable linking."
+                )
+            return
+
+        # Run bulk linking
+        if not use_json:
+            action = "Previewing" if dry_run else "Scanning for"
+            console.print(f"{action} cross-provider matches...\n")
+
+        result = bulk_link_activities(session, dry_run=dry_run)
+
+        if use_json:
+            print_json(result)
+            return
+
+        # Display matches
+        matches = result["matches"]
+        if matches:
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("#", justify="right")
+            table.add_column("Strava Activity")
+            table.add_column("Garmin Activity")
+            table.add_column("Date")
+            table.add_column("Confidence", justify="right")
+
+            for i, m in enumerate(matches, 1):
+                date_str = m["strava_date"][:10] if m["strava_date"] else ""
+                conf_str = f"{m['confidence']:.0%}"
+                ambig = " ⚠" if m.get("ambiguous") else ""
+                table.add_row(
+                    str(i),
+                    f"{m['strava_name'] or 'Untitled'} (#{m['strava_activity_id']})",
+                    f"{m['garmin_name'] or 'Untitled'} (#{m['garmin_activity_id']})",
+                    date_str,
+                    conf_str + ambig,
+                )
+
+            console.print(table)
+            console.print()
+
+        # Summary
+        action_word = "Would link" if dry_run else "Links created"
+        link_count = result["matches_found"] if dry_run else result["links_created"]
+        console.print("[bold]Summary[/bold]")
+        console.print(
+            f"  Scanned: {result['scanned_strava']} strava + "
+            f"{result['scanned_garmin']} garmin activities"
+        )
+        console.print(f"  Matches found: {result['matches_found']}")
+        console.print(f"  {action_word}: {link_count}")
+        console.print(f"  Already linked: {result['already_linked']}")
+
+        if any(m.get("ambiguous") for m in matches):
+            console.print(
+                "\n[yellow]⚠ Some matches had multiple candidates — "
+                "highest confidence was selected.[/yellow]"
+            )
+
     finally:
         session.close()
 

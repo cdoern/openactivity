@@ -21,6 +21,8 @@ class ImportResult:
         self.activities_skipped = 0
         self.activities_errors = 0
         self.files_processed = 0
+        self.activities_linked = 0
+        self.activities_link_checked = 0
 
 
 def find_fit_files_in_directory(directory: Path) -> list[Path]:
@@ -165,6 +167,7 @@ def import_from_directory(
         ImportResult with statistics
     """
     result = ImportResult()
+    new_activities = []
 
     fit_files = find_fit_files_in_directory(directory)
 
@@ -195,6 +198,7 @@ def import_from_directory(
             activity_data["athlete_id"] = athlete_id
             new_activity = Activity(**activity_data)
             session.add(new_activity)
+            new_activities.append(new_activity)
             result.activities_imported += 1
 
         except Exception:
@@ -202,6 +206,15 @@ def import_from_directory(
             continue
 
     session.commit()
+
+    # Auto-link new activities against other providers
+    if new_activities:
+        from openactivity.db.queries import auto_link_new_activities
+
+        link_stats = auto_link_new_activities(session, new_activities)
+        result.activities_linked = link_stats["linked"]
+        result.activities_link_checked = link_stats["checked"]
+
     return result
 
 

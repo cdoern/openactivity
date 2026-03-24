@@ -237,6 +237,12 @@ def garmin_import(
         if result.activities_errors > 0:
             console.print(f"  Errors: {result.activities_errors}")
 
+        if result.activities_linked > 0 or result.activities_link_checked > 0:
+            console.print(
+                f"\n  Cross-provider linking: {result.activities_linked} of "
+                f"{result.activities_link_checked} new activities matched to Strava"
+            )
+
         if result.activities_imported == 0 and result.activities_skipped == 0:
             console.print()
             console.print("[yellow]⚠ No FIT files found[/yellow]")

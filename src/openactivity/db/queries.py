@@ -51,7 +51,13 @@ def get_activities(
     limit: int = 20,
     offset: int = 0,
 ) -> list[Activity]:
-    """Query activities with optional filters."""
+    """Query activities with optional filters.
+
+    When no provider filter is set, linked Garmin activities are excluded
+    (the Strava copy is shown with a [Strava+Garmin] badge instead).
+    """
+    from sqlalchemy import and_, not_
+
     query = session.query(Activity)
 
     if activity_type:
@@ -64,6 +70,20 @@ def get_activities(
         query = query.filter(Activity.name.ilike(f"%{search}%"))
     if provider:
         query = query.filter(Activity.provider == provider)
+    else:
+        # Exclude garmin activities that are linked (strava copy is primary)
+        linked_garmin_ids = (
+            session.query(ActivityLink.garmin_activity_id)
+            .filter(ActivityLink.garmin_activity_id.isnot(None))
+        )
+        query = query.filter(
+            not_(
+                and_(
+                    Activity.provider == "garmin",
+                    Activity.id.in_(linked_garmin_ids),
+                )
+            )
+        )
 
     if sort == "distance":
         query = query.order_by(desc(Activity.distance))
@@ -85,6 +105,8 @@ def count_activities(
     provider: str | None = None,
 ) -> int:
     """Count activities matching filters."""
+    from sqlalchemy import and_, not_
+
     query = session.query(Activity)
     if activity_type:
         query = query.filter(Activity.type.ilike(f"%{activity_type}%"))
@@ -96,6 +118,19 @@ def count_activities(
         query = query.filter(Activity.name.ilike(f"%{search}%"))
     if provider:
         query = query.filter(Activity.provider == provider)
+    else:
+        linked_garmin_ids = (
+            session.query(ActivityLink.garmin_activity_id)
+            .filter(ActivityLink.garmin_activity_id.isnot(None))
+        )
+        query = query.filter(
+            not_(
+                and_(
+                    Activity.provider == "garmin",
+                    Activity.id.in_(linked_garmin_ids),
+                )
+            )
+        )
     return query.count()
 
 
@@ -350,14 +385,26 @@ def detect_duplicate_activities(session: Session, activity: Activity) -> list[tu
     return matches
 
 
+def _normalize_type(raw_type: str) -> str:
+    """Normalize an activity type string for comparison.
+
+    Strips Strava's ``root='...'`` wrapper, lowercases, and replaces
+    underscores so that cross-provider types can be compared directly.
+    """
+    t = raw_type.strip()
+    # Strip Strava's root='...' wrapper
+    if t.startswith("root='") and t.endswith("'"):
+        t = t[6:-1]
+    return t.lower()
+
+
 def _types_match(type1: str | None, type2: str | None) -> bool:
-    """Check if two activity types match (case-insensitive)."""
+    """Check if two activity types match (case-insensitive, cross-provider)."""
     if not type1 or not type2:
         return False
 
-    # Normalize types
-    t1 = type1.lower()
-    t2 = type2.lower()
+    t1 = _normalize_type(type1)
+    t2 = _normalize_type(type2)
 
     # Direct match
     if t1 == t2:
@@ -378,6 +425,22 @@ def _types_match(type1: str | None, type2: str | None) -> bool:
 
     swim_types = {"swim", "swimming", "open_water_swimming"}
     if t1 in swim_types and t2 in swim_types:
+        return True
+
+    ski_types = {"alpineski", "alpine_skiing"}
+    if t1 in ski_types and t2 in ski_types:
+        return True
+
+    hike_types = {"hike", "hiking"}
+    if t1 in hike_types and t2 in hike_types:
+        return True
+
+    walk_types = {"walk", "walking"}
+    if t1 in walk_types and t2 in walk_types:
+        return True
+
+    workout_types = {"workout", "strength", "strength_training"}
+    if t1 in workout_types and t2 in workout_types:
         return True
 
     return False
@@ -441,3 +504,170 @@ def link_activities(
     session.flush()
 
     return link
+
+
+def bulk_link_activities(
+    session: Session,
+    *,
+    dry_run: bool = False,
+) -> dict:
+    """Scan all unlinked activities and create cross-provider links.
+
+    Iterates Strava activities, finds Garmin matches using
+    ``detect_duplicate_activities``, and links the best match.
+
+    Args:
+        session: Database session
+        dry_run: If True, collect matches but don't create links
+
+    Returns:
+        Dict with keys: scanned_strava, scanned_garmin, matches_found,
+        links_created, already_linked, skipped, matches (list of match dicts)
+    """
+    strava_count = session.query(Activity).filter_by(provider="strava").count()
+    garmin_count = session.query(Activity).filter_by(provider="garmin").count()
+
+    strava_activities = (
+        session.query(Activity)
+        .filter_by(provider="strava")
+        .order_by(desc(Activity.start_date))
+        .all()
+    )
+
+    matches_found = 0
+    links_created = 0
+    already_linked = 0
+    skipped = 0
+    match_details = []
+
+    for activity in strava_activities:
+        # Skip if already linked
+        existing_link = (
+            session.query(ActivityLink)
+            .filter(ActivityLink.strava_activity_id == activity.id)
+            .first()
+        )
+        if existing_link:
+            already_linked += 1
+            continue
+
+        candidates = detect_duplicate_activities(session, activity)
+        if not candidates:
+            continue
+
+        matches_found += 1
+        best_match, confidence = candidates[0]
+
+        match_details.append({
+            "strava_activity_id": activity.id,
+            "garmin_activity_id": best_match.id,
+            "strava_name": activity.name,
+            "garmin_name": best_match.name,
+            "confidence": round(confidence, 2),
+            "strava_date": activity.start_date.isoformat() if activity.start_date else None,
+            "garmin_date": best_match.start_date.isoformat() if best_match.start_date else None,
+            "ambiguous": len(candidates) > 1,
+        })
+
+        if not dry_run:
+            strava_id = activity.id
+            garmin_id = best_match.id
+            link_activities(session, strava_id, garmin_id, "strava", confidence)
+            links_created += 1
+
+    if not dry_run and links_created > 0:
+        session.commit()
+
+    return {
+        "scanned_strava": strava_count,
+        "scanned_garmin": garmin_count,
+        "matches_found": matches_found,
+        "links_created": links_created,
+        "already_linked": already_linked,
+        "skipped": skipped,
+        "matches": match_details,
+    }
+
+
+def auto_link_new_activities(
+    session: Session,
+    new_activities: list[Activity],
+) -> dict:
+    """Auto-link newly imported/synced activities against the other provider.
+
+    Args:
+        session: Database session
+        new_activities: List of newly added Activity objects
+
+    Returns:
+        Dict with keys: checked, linked
+    """
+    checked = 0
+    linked = 0
+
+    for activity in new_activities:
+        if not activity.id:
+            continue
+        checked += 1
+        candidates = detect_duplicate_activities(session, activity)
+        if not candidates:
+            continue
+
+        best_match, confidence = candidates[0]
+
+        if activity.provider == "strava":
+            link_activities(session, activity.id, best_match.id, "strava", confidence)
+        else:
+            link_activities(session, best_match.id, activity.id, "strava", confidence)
+        linked += 1
+
+    if linked > 0:
+        session.commit()
+
+    return {"checked": checked, "linked": linked}
+
+
+def unlink_activity(session: Session, activity_id: int) -> dict | None:
+    """Remove the cross-provider link for an activity.
+
+    Args:
+        session: Database session
+        activity_id: The activity database ID to unlink
+
+    Returns:
+        Dict with info about the removed link, or None if no link found
+    """
+    link = (
+        session.query(ActivityLink)
+        .filter(
+            (ActivityLink.strava_activity_id == activity_id)
+            | (ActivityLink.garmin_activity_id == activity_id)
+        )
+        .first()
+    )
+
+    if not link:
+        return None
+
+    strava_activity = (
+        session.query(Activity).filter_by(id=link.strava_activity_id).first()
+        if link.strava_activity_id
+        else None
+    )
+    garmin_activity = (
+        session.query(Activity).filter_by(id=link.garmin_activity_id).first()
+        if link.garmin_activity_id
+        else None
+    )
+
+    info = {
+        "strava_activity_id": link.strava_activity_id,
+        "garmin_activity_id": link.garmin_activity_id,
+        "strava_name": strava_activity.name if strava_activity else None,
+        "garmin_name": garmin_activity.name if garmin_activity else None,
+    }
+
+    session.delete(link)
+    session.commit()
+
+    return info
