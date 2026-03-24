@@ -4,13 +4,110 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import click
 import typer
 from rich.console import Console
 
-from openactivity.db.database import get_session
+from openactivity.db.database import get_session, init_db
 from openactivity.providers.garmin import importer
 
 console = Console()
+
+
+def _import_from_device(session) -> importer.ImportResult:
+    """Handle --from-device with USB mass storage and MTP fallback."""
+    from rich.progress import Progress
+
+    from openactivity.providers.garmin.mtp import (
+        MTPError,
+        detect_garmin_device,
+        get_install_command,
+        is_libmtp_available,
+        list_activity_files,
+    )
+
+    # Try USB mass storage first (older devices)
+    console.print("Looking for connected Garmin device...")
+    mass_storage_path = importer.find_connected_device()
+    if mass_storage_path:
+        console.print(f"Found device at {mass_storage_path}")
+        return importer.import_from_directory(session, mass_storage_path)
+
+    # Check if MTP tools are available
+    if not is_libmtp_available():
+        # Check if a Garmin is connected via USB at all
+        if importer.is_mtp_device_connected():
+            console.print(
+                "[yellow]Garmin device detected, but MTP tools are not installed.[/yellow]"
+            )
+            console.print()
+            console.print("Newer Garmin watches (Forerunner 265/965, Fenix 7+, etc.) use MTP")
+            console.print("to transfer files. Install MTP support with:")
+            console.print()
+            console.print(f"  [bold]{get_install_command()}[/bold]")
+            console.print()
+            console.print("Then re-run this command.")
+        else:
+            console.print("[yellow]No Garmin device found[/yellow]")
+            console.print()
+            console.print("[bold]Troubleshooting:[/bold]")
+            console.print("  1. Connect your Garmin device via USB cable")
+            console.print("  2. Quit Garmin Express if it's running")
+            console.print("  3. Re-run this command")
+        raise typer.Exit(1)
+
+    # Try MTP
+    device_info = detect_garmin_device()
+    if not device_info:
+        console.print("[yellow]No Garmin device found[/yellow]")
+        console.print()
+        console.print("[bold]Troubleshooting:[/bold]")
+        console.print("  1. Connect your Garmin device via USB cable")
+        console.print("  2. Quit Garmin Express (it grabs exclusive USB access)")
+        console.print("  3. Re-run this command")
+        raise typer.Exit(1)
+
+    model = device_info.get("model", "Garmin device")
+    console.print(f"Found [bold]{model}[/bold] via MTP")
+
+    # List activity files
+    console.print("Scanning device for activities...")
+    try:
+        activity_files = list_activity_files()
+    except MTPError as e:
+        console.print(f"[red]Error reading device: {e}[/red]")
+        console.print("Try quitting Garmin Express and re-running.")
+        raise typer.Exit(1) from None
+
+    if not activity_files:
+        console.print("[yellow]No activity files found on device[/yellow]")
+        raise typer.Exit(1)
+
+    console.print(f"Found {len(activity_files)} activities on device")
+    console.print("Downloading FIT files from device...")
+
+    # Download with progress bar
+    import tempfile
+
+    dest_dir = Path(tempfile.mkdtemp(prefix="garmin_activities_"))
+
+    with Progress(console=console) as progress:
+        task = progress.add_task("Downloading...", total=len(activity_files))
+
+        def on_progress(current, total, filename):
+            progress.update(task, completed=current, description=f"Downloading {filename}")
+
+        from openactivity.providers.garmin.mtp import download_activity_files
+
+        downloaded = download_activity_files(
+            activity_files, dest_dir, progress_callback=on_progress,
+        )
+
+    console.print(f"Downloaded {downloaded} files from device")
+
+    # Import the downloaded files
+    console.print("Importing activities...")
+    return importer.import_from_directory(session, dest_dir)
 
 
 def garmin_import(
@@ -70,27 +167,13 @@ def garmin_import(
 
     console.print("[bold]Garmin FIT File Import[/bold]\n")
 
+    init_db()
     session = get_session()
 
     try:
         # Import from device
         if from_device:
-            console.print("Looking for connected Garmin device...")
-            result = importer.import_from_device(session)
-
-            if result is None:
-                console.print("[yellow]⚠ No Garmin device found[/yellow]")
-                console.print()
-                console.print("[bold]Troubleshooting:[/bold]")
-                console.print("  1. Connect your Garmin device via USB")
-                console.print("  2. Make sure it's mounted/accessible")
-                console.print("  3. Check that the device appears in file manager")
-                console.print()
-                console.print("Common mount points:")
-                console.print("  Linux:   /media/GARMIN/")
-                console.print("  macOS:   /Volumes/GARMIN/")
-                console.print("  Windows: D:/ or E:/")
-                raise typer.Exit(1)
+            result = _import_from_device(session)
 
         # Import from Garmin Connect folder
         elif from_connect:
@@ -118,7 +201,13 @@ def garmin_import(
                 console.print(f"[red]Error: ZIP file not found: {from_zip}[/red]")
                 raise typer.Exit(1)
 
+            if zip_path.suffix.lower() != ".zip":
+                console.print(f"[red]Error: File does not appear to be a ZIP: {from_zip}[/red]")
+                console.print("Expected a .zip file from Garmin bulk export.")
+                raise typer.Exit(1)
+
             console.print(f"Importing from ZIP: {zip_path.name}...")
+            console.print("Extracting and parsing FIT files...")
             result = importer.import_from_zip(session, zip_path)
 
         # Import from custom directory
@@ -128,7 +217,14 @@ def garmin_import(
                 console.print(f"[red]Error: Directory not found: {from_directory}[/red]")
                 raise typer.Exit(1)
 
+            if not dir_path.is_dir():
+                console.print(f"[red]Error: Path is not a directory: {from_directory}[/red]")
+                console.print("Use --from-zip for ZIP files.")
+                raise typer.Exit(1)
+
+            fit_files = importer.find_fit_files_in_directory(dir_path)
             console.print(f"Importing from directory: {dir_path}...")
+            console.print(f"Found {len(fit_files)} FIT files to process...")
             result = importer.import_from_directory(session, dir_path)
 
         # Display results
@@ -146,8 +242,10 @@ def garmin_import(
             console.print("[yellow]⚠ No FIT files found[/yellow]")
             console.print("Make sure FIT files exist in the specified location.")
 
+    except click.exceptions.Exit:
+        raise
     except Exception as e:
         console.print(f"[red]Error during import: {e}[/red]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     finally:
         session.close()

@@ -46,6 +46,7 @@ def get_activities(
     after: datetime | None = None,
     before: datetime | None = None,
     search: str | None = None,
+    provider: str | None = None,
     sort: str = "date",
     limit: int = 20,
     offset: int = 0,
@@ -61,6 +62,8 @@ def get_activities(
         query = query.filter(Activity.start_date <= before)
     if search:
         query = query.filter(Activity.name.ilike(f"%{search}%"))
+    if provider:
+        query = query.filter(Activity.provider == provider)
 
     if sort == "distance":
         query = query.order_by(desc(Activity.distance))
@@ -79,6 +82,7 @@ def count_activities(
     after: datetime | None = None,
     before: datetime | None = None,
     search: str | None = None,
+    provider: str | None = None,
 ) -> int:
     """Count activities matching filters."""
     query = session.query(Activity)
@@ -90,11 +94,36 @@ def count_activities(
         query = query.filter(Activity.start_date <= before)
     if search:
         query = query.filter(Activity.name.ilike(f"%{search}%"))
+    if provider:
+        query = query.filter(Activity.provider == provider)
     return query.count()
 
 
+def get_provider_badge(session: Session, activity: Activity) -> str:
+    """Get a display badge for the activity's provider(s).
+
+    Returns badges like [Strava], [Garmin], or [Strava+Garmin] if linked.
+    """
+    # Check if this activity is linked to one from another provider
+    link = (
+        session.query(ActivityLink)
+        .filter(
+            (ActivityLink.strava_activity_id == activity.id)
+            | (ActivityLink.garmin_activity_id == activity.id)
+        )
+        .first()
+    )
+
+    if link:
+        return "[Strava+Garmin]"
+
+    if activity.provider == "garmin":
+        return "[Garmin]"
+    return "[Strava]"
+
+
 def get_activity_by_id(session: Session, activity_id: int) -> Activity | None:
-    """Get a single activity by Strava ID."""
+    """Get a single activity by ID."""
     return session.query(Activity).filter_by(id=activity_id).first()
 
 

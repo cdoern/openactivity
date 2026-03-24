@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fitparse import FitFile
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class FitActivityParser:
@@ -93,21 +95,20 @@ class FitActivityParser:
         if not activity_data["start_date"]:
             return None
 
-        # Generate provider_id from file metadata
-        file_stat = self.fit_file_path.stat()
-        activity_data["provider_id"] = int(file_stat.st_mtime * 1000)  # timestamp in ms
+        # Generate provider_id from activity start timestamp (stable across copies)
+        activity_data["provider_id"] = int(activity_data["start_date"].timestamp())
 
         # Try to get activity name from file message
         for record in self.fit.get_messages("file_id"):
             for field in record:
-                if field.name == "time_created":
-                    # Use timestamp as fallback name
-                    if not activity_data["name"]:
-                        activity_data["name"] = f"Garmin Activity {field.value.strftime('%Y-%m-%d %H:%M')}"
+                if field.name == "time_created" and not activity_data["name"]:
+                    dt_str = field.value.strftime("%Y-%m-%d %H:%M")
+                    activity_data["name"] = f"Garmin Activity {dt_str}"
 
         # Default name if still None
         if not activity_data["name"]:
-            activity_data["name"] = f"Garmin Activity {activity_data['start_date'].strftime('%Y-%m-%d %H:%M')}"
+            dt_str = activity_data["start_date"].strftime("%Y-%m-%d %H:%M")
+            activity_data["name"] = f"Garmin Activity {dt_str}"
 
         return activity_data
 
@@ -138,7 +139,8 @@ class FitActivityParser:
         }
 
         sport_lower = str(garmin_sport).lower() if garmin_sport else "generic"
-        return type_mapping.get(sport_lower, garmin_sport.capitalize() if garmin_sport else "Workout")
+        fallback = garmin_sport.capitalize() if garmin_sport else "Workout"
+        return type_mapping.get(sport_lower, fallback)
 
 
 def parse_fit_file(fit_file_path: Path) -> dict | None:

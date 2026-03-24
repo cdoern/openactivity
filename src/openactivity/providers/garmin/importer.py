@@ -52,7 +52,8 @@ def find_garmin_connect_directory() -> Path | None:
         Path.home() / "AppData" / "Local" / "Garmin" / "GarminConnect",
         Path.home() / "AppData" / "Roaming" / "Garmin" / "GarminConnect",
         # Linux (if using Wine or similar)
-        Path.home() / ".wine" / "drive_c" / "Users" / "Public" / "Documents" / "Garmin" / "GarminConnect",
+        Path.home()
+        / ".wine" / "drive_c" / "Users" / "Public" / "Documents" / "Garmin" / "GarminConnect",
     ]
 
     for path in possible_paths:
@@ -63,29 +64,89 @@ def find_garmin_connect_directory() -> Path | None:
 
 
 def find_connected_device() -> Path | None:
-    """Find a connected Garmin device.
+    """Find a connected Garmin device mounted as USB mass storage.
+
+    Note: Newer Garmin devices (Forerunner 965, Fenix 7+, etc.) use MTP
+    instead of USB mass storage and will NOT appear as a mounted volume.
+    For MTP devices, use --from-zip with a Garmin Connect bulk export.
 
     Returns:
-        Path to device's Garmin directory, or None if not found
+        Path to device's Activity directory, or None if not found
     """
-    # Common mount points for Garmin devices
-    possible_paths = [
-        # Linux
-        Path("/media") / "GARMIN" / "Garmin",
-        Path("/run/media") / Path.home().name / "GARMIN" / "Garmin",
-        # macOS
-        Path("/Volumes") / "GARMIN" / "Garmin",
+    import platform
+
+    possible_paths = []
+
+    if platform.system() == "Darwin":
+        # macOS: check /Volumes for any Garmin-like mount
+        volumes = Path("/Volumes")
+        if volumes.exists():
+            for vol in volumes.iterdir():
+                garmin_dir = vol / "Garmin" / "Activities"
+                if garmin_dir.exists():
+                    return garmin_dir
+                # Some devices mount with Activities at root
+                garmin_dir = vol / "Activities"
+                if garmin_dir.exists():
+                    return garmin_dir
+        # Standard path
+        possible_paths.append(Path("/Volumes") / "GARMIN" / "Garmin" / "Activities")
+    elif platform.system() == "Linux":
+        # Linux: check common mount points
+        for base in [Path("/media"), Path("/run/media") / Path.home().name]:
+            if base.exists():
+                for mount in base.iterdir():
+                    garmin_dir = mount / "Garmin" / "Activities"
+                    if garmin_dir.exists():
+                        return garmin_dir
+        possible_paths.extend([
+            Path("/media") / "GARMIN" / "Garmin" / "Activities",
+            Path("/run/media") / Path.home().name / "GARMIN" / "Garmin" / "Activities",
+        ])
+    else:
         # Windows
-        Path("D:/Garmin"),
-        Path("E:/Garmin"),
-        Path("F:/Garmin"),
-    ]
+        for drive in "DEFGH":
+            possible_paths.append(Path(f"{drive}:/Garmin/Activities"))
 
     for path in possible_paths:
-        if path.exists() and (path / "Activities").exists():
-            return path / "Activities"
+        if path.exists():
+            return path
 
     return None
+
+
+def is_mtp_device_connected() -> bool:
+    """Check if a Garmin device is connected via MTP (not mass storage).
+
+    Newer Garmin watches use MTP and are grabbed by Garmin Express.
+    Returns True if we detect a Garmin MTP device.
+    """
+    import platform
+    import subprocess
+
+    if platform.system() == "Darwin":
+        try:
+            result = subprocess.run(
+                ["ioreg", "-p", "IOUSB", "-l"],
+                capture_output=True, text=True, timeout=5,
+            )
+            # Garmin Express grabs the device as exclusive owner
+            if "Garmin" in result.stdout:
+                return True
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+    elif platform.system() == "Linux":
+        try:
+            result = subprocess.run(
+                ["lsusb"], capture_output=True, text=True, timeout=5,
+            )
+            # Garmin vendor ID is 091e
+            if "091e" in result.stdout.lower() or "garmin" in result.stdout.lower():
+                return True
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+
+    return False
 
 
 def import_from_directory(
@@ -147,22 +208,41 @@ def import_from_directory(
 def import_from_device(
     session: Session,
     athlete_id: int = 1,
+    *,
+    progress_callback: callable | None = None,
 ) -> ImportResult | None:
     """Import FIT files from a connected Garmin device.
+
+    First tries USB mass storage mount, then falls back to MTP protocol.
 
     Args:
         session: Database session
         athlete_id: Athlete ID to assign to activities
+        progress_callback: Optional callback for MTP download progress
 
     Returns:
         ImportResult with statistics, or None if no device found
     """
+    # Try USB mass storage first (older devices)
     device_path = find_connected_device()
+    if device_path:
+        return import_from_directory(session, device_path, athlete_id)
 
-    if not device_path:
+    # Try MTP (newer devices like FR 965, Fenix 7+)
+    from openactivity.providers.garmin.mtp import (
+        MTPError,
+        download_all_activities,
+        is_libmtp_available,
+    )
+
+    if not is_libmtp_available():
+        return None  # Caller handles messaging
+
+    try:
+        download_dir = download_all_activities(progress_callback=progress_callback)
+        return import_from_directory(session, download_dir, athlete_id)
+    except MTPError:
         return None
-
-    return import_from_directory(session, device_path, athlete_id)
 
 
 def import_from_garmin_connect(

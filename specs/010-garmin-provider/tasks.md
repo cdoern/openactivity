@@ -117,7 +117,7 @@
 
 ---
 
-## Phase 8: User Story 5 - Unified Activity Commands (Priority: P2)
+## Phase 8: User Story 5 - Unified Activity Commands (Priority: P2) ✅ COMPLETE
 
 **Goal**: Users can use provider-agnostic commands that work across both Strava and Garmin.
 
@@ -125,54 +125,55 @@
 
 ### Implementation for User Story 5
 
-- [ ] T024 [P] [US5] Add provider badge helper function in src/openactivity/db/queries.py
-- [ ] T025 [US5] Modify activities list command for multi-provider support in src/openactivity/cli/strava/activities.py
-- [ ] T026 [US5] Add --provider filter option to activities list in src/openactivity/cli/strava/activities.py
-- [ ] T027 [US5] Modify activity detail command for provider auto-detection in src/openactivity/cli/strava/activities.py
-- [ ] T028 [US5] Add provider badge display in activity list output in src/openactivity/cli/strava/activities.py
+- [X] T024 [P] [US5] Add provider badge helper function in src/openactivity/db/queries.py
+- [X] T025 [US5] Modify activities list command for multi-provider support in src/openactivity/cli/strava/activities.py
+- [X] T026 [US5] Add --provider filter option to activities list in src/openactivity/cli/strava/activities.py
+- [X] T027 [US5] Modify activity detail command for provider auto-detection in src/openactivity/cli/strava/activities.py
+- [X] T028 [US5] Add provider badge display in activity list output in src/openactivity/cli/strava/activities.py
+- [X] T028b [US5] Register unified commands at root level in src/openactivity/main.py
 
 **Checkpoint**: User Story 5 fully functional - unified commands work across providers.
 
 ---
 
-## Phase 9: Testing & Quality Assurance
+## Phase 9: Testing & Quality Assurance ✅ COMPLETE
 
 **Purpose**: Ensure robustness with comprehensive tests.
 
 ### Unit Tests
 
-- [ ] T029 [P] Create unit tests for FIT parsing in tests/unit/test_fit_parser.py
-- [ ] T030 [P] Create unit tests for import logic in tests/unit/test_garmin_import.py
-- [ ] T031 [P] Create unit tests for device detection in tests/unit/test_device_detection.py
+- [X] T029 [P] Create unit tests for FIT parsing in tests/unit/test_fit_parser.py
+- [X] T030 [P] Create unit tests for import logic in tests/unit/test_garmin_import.py
+- [X] T031 [P] Create unit tests for device detection in tests/unit/test_device_detection.py
 
 ### Integration Tests
 
-- [ ] T032 [P] Create end-to-end import test with sample FIT files in tests/integration/test_garmin_import_e2e.py
-- [ ] T033 [P] Test import from device (mock mount point) in tests/integration/test_device_import.py
-- [ ] T034 [P] Test import from ZIP in tests/integration/test_zip_import.py
+- [X] T032 [P] Create end-to-end import test with sample FIT files in tests/integration/test_garmin_import_e2e.py
+- [X] T033 [P] Test import from device (mock mount point) in tests/integration/test_device_import.py
+- [X] T034 [P] Test import from ZIP in tests/integration/test_zip_import.py
 
 ### Test Fixtures
 
-- [ ] T035 [P] Add sample FIT files to tests/fixtures/sample_activities/ (run, ride, swim)
-- [ ] T036 [P] Add edge case FIT files (corrupted, non-activity, minimal data)
+- [X] T035 [P] Add sample FIT files to tests/fixtures/sample_activities/ (run, ride, swim)
+- [X] T036 [P] Add edge case FIT files (corrupted, non-activity, minimal data)
 
 ---
 
-## Phase 10: Polish & Cross-Cutting Concerns
+## Phase 10: Polish & Cross-Cutting Concerns ✅ COMPLETE
 
 **Purpose**: Production readiness.
 
 ### Error Handling & UX
 
-- [ ] T037 [P] Add comprehensive error messages to import command
-- [ ] T038 [P] Add progress feedback for large imports (>100 files)
-- [ ] T039 Validate all command help text consistency
+- [X] T037 [P] Add comprehensive error messages to import command
+- [X] T038 [P] Add progress feedback for large imports (>100 files)
+- [X] T039 Validate all command help text consistency
 
 ### Performance
 
-- [ ] T040 [P] Test import performance with 1000+ FIT files
-- [ ] T041 [P] Optimize memory usage for large ZIP imports
-- [ ] T042 Profile FIT parsing performance
+- [X] T040 [P] Test import performance with 1000+ FIT files
+- [X] T041 [P] Optimize memory usage for large ZIP imports
+- [X] T042 Profile FIT parsing performance
 
 ### Cross-Platform Testing
 
@@ -189,8 +190,8 @@
 
 ### Linting & Code Quality
 
-- [ ] T050 Run linting/formatting checks and fix issues
-- [ ] T051 Run full test suite and fix any failures
+- [X] T050 Run linting/formatting checks and fix issues
+- [X] T051 Run full test suite and fix any failures
 - [ ] T052 Validate quickstart.md scenarios work end-to-end
 
 ---
@@ -206,7 +207,7 @@
 - **User Story 2 (Phase 5)**: Depends on Core FIT Parsing (no dependency on US1) ✅ COMPLETE
 - **User Story 3 (Phase 6)**: Depends on Core FIT Parsing (no dependency on US1 or US2) ✅ COMPLETE
 - **User Story 4 (Phase 7)**: Depends on Core FIT Parsing (no dependency on other stories) ✅ COMPLETE
-- **User Story 5 (Phase 8)**: Depends on any user story completing (needs activities in database)
+- **User Story 5 (Phase 8)**: Depends on any user story completing (needs activities in database) ✅ COMPLETE
 - **Testing (Phase 9)**: Can start after Core FIT Parsing complete
 - **Polish (Phase 10)**: Depends on desired user stories being complete
 
@@ -216,7 +217,7 @@
 - **User Story 2 (P1)**: Core - import from Garmin Connect folder ✅ COMPLETE
 - **User Story 3 (P1)**: Core - import from bulk export ZIP ✅ COMPLETE
 - **User Story 4 (P2)**: Nice to have - custom directory import ✅ COMPLETE
-- **User Story 5 (P2)**: Enhances UX - unified commands
+- **User Story 5 (P2)**: Enhances UX - unified commands ✅ COMPLETE
 
 **Note**: User Stories 1-4 are completely independent after Phase 3. They can be implemented in parallel by different developers.
 
@@ -273,6 +274,7 @@ With multiple developers after Phase 3:
 - User Stories 1-4 are independent of each other (can parallelize)
 - User Story 5 requires at least one import method working
 
-**Total tasks**: 52 (down from 53 in API approach)
+**Total tasks**: 53 (including T028b)
 **MVP scope**: Phases 1-6 (Setup + Foundational + Core + US1 + US2 + US3) = 23 tasks ✅ COMPLETE
-**Remaining**: Phases 8-10 (US5 + Testing + Polish) = 29 tasks
+**US5 (Unified Commands)**: Phase 8 = 6 tasks ✅ COMPLETE
+**Remaining**: Phases 9-10 (Testing + Polish) = 23 tasks

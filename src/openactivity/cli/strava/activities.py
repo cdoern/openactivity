@@ -18,6 +18,7 @@ from openactivity.db.queries import (
     get_activity_zones,
     get_gear,
     get_laps,
+    get_provider_badge,
 )
 from openactivity.output.errors import exit_with_error
 from openactivity.output.json import print_json
@@ -72,6 +73,11 @@ def list_activities(
         "--sort",
         help='Sort by: "date", "distance", "duration".',
     ),
+    provider: str | None = typer.Option(
+        None,
+        "--provider",
+        help='Filter by provider: "strava" or "garmin".',
+    ),
 ) -> None:
     """List activities from local storage with optional filters.
 
@@ -79,6 +85,7 @@ def list_activities(
         openactivity strava activities list
         openactivity strava activities list --type Run --after 2026-01-01
         openactivity strava activities list --search "morning" --sort distance
+        openactivity strava activities list --provider garmin
         openactivity strava activities list --json
     """
     state = get_global_state()
@@ -98,6 +105,7 @@ def list_activities(
             after=after_dt,
             before=before_dt,
             search=search,
+            provider=provider,
             sort=sort,
             limit=limit,
             offset=offset,
@@ -109,6 +117,7 @@ def list_activities(
             after=after_dt,
             before=before_dt,
             search=search,
+            provider=provider,
         )
 
         if not activities:
@@ -126,6 +135,7 @@ def list_activities(
                         "id": a.id,
                         "name": a.name,
                         "type": a.type,
+                        "provider": a.provider,
                         "start_date": a.start_date,
                         "distance": a.distance,
                         "moving_time": a.moving_time,
@@ -140,6 +150,7 @@ def list_activities(
 
         table = Table(show_header=True, header_style="bold")
         table.add_column("ID")
+        table.add_column("Provider")
         table.add_column("Date")
         table.add_column("Type")
         table.add_column("Name")
@@ -149,8 +160,10 @@ def list_activities(
 
         for a in activities:
             date_str = a.start_date.strftime("%Y-%m-%d") if a.start_date else ""
+            badge = get_provider_badge(session, a)
             table.add_row(
                 str(a.id),
+                badge,
                 date_str,
                 a.type or "",
                 (a.name or "")[:30],
@@ -194,7 +207,7 @@ def show_activity(
             exit_with_error(
                 "not_found",
                 f"Activity {activity_id} not found.",
-                "Run 'openactivity strava sync' to fetch activities.",
+                "Run 'openactivity strava sync' or 'openactivity garmin import' to fetch activities.",
                 use_json=use_json,
             )
 
@@ -243,6 +256,7 @@ def show_activity(
                 "id": activity.id,
                 "name": activity.name,
                 "type": activity.type,
+                "provider": activity.provider,
                 "sport_type": activity.sport_type,
                 "start_date": activity.start_date,
                 "distance": activity.distance,
@@ -305,8 +319,9 @@ def show_activity(
         date_str = (
             activity.start_date.strftime("%Y-%m-%d %H:%M") if activity.start_date else "Unknown"
         )
+        badge = get_provider_badge(session, activity)
         console.print(
-            f"\n[bold]{activity.name or 'Untitled'}[/bold]  ({activity.type or 'Unknown'})"
+            f"\n[bold]{activity.name or 'Untitled'}[/bold]  ({activity.type or 'Unknown'})  {badge}"
         )
         console.print(f"  Date: {date_str}")
         console.print(f"  Distance: {format_distance(activity.distance, units)}")
@@ -406,7 +421,7 @@ def show_activity(
                     )
                 console.print(zt)
 
-        if not activity.synced_detail:
+        if not activity.synced_detail and activity.provider == "strava":
             console.print(
                 "\n[dim]Note: Detailed data (laps, zones, streams) "
                 "not yet synced. Run 'openactivity strava sync' "

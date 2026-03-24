@@ -122,22 +122,31 @@ For repeated routes and segments, show performance trends over time. Strava show
 
 Add Garmin Connect as a second data provider, following the existing provider interface pattern. This unlocks HRV, Body Battery, sleep, respiration, and other health metrics that Strava doesn't have.
 
-### Feature 2.1: Garmin Authentication & Sync
+### Feature 2.1: Garmin FIT File Import ✅ COMPLETE
 
-**Branch**: `009-garmin-provider`
+**Branch**: `010-garmin-provider`
 
-Implement the Garmin provider under `openactivity garmin` using the same provider interface pattern as Strava. Garmin Connect has richer health/recovery data (HRV, Body Battery, sleep, stress, respiration, SpO2) that Strava lacks entirely.
+Import Garmin activity data via FIT files (no API dependency — Garmin rate-limits/bans automated API access). Supports import from USB device, Garmin Express folder, bulk export ZIP, and custom directories. Unified `openactivity activities list` and `openactivity activity <ID>` commands work across all providers with provider badges.
 
-- New command group: `openactivity garmin`
-- Commands: `garmin auth`, `garmin sync`, `garmin athlete`, `garmin activities list`, `garmin activity <ID>`
-- Library: `python-garminconnect` (or `garminconnect`) for API access
-- Auth: Garmin uses username/password (no OAuth) — store in keyring
-- New DB models for Garmin-specific data:
-  - `GarminDailySummary` (resting HR, HRV, Body Battery, stress, sleep score, steps, respiration, SpO2)
-  - `GarminSleepSession` (start, end, deep/light/REM/awake durations, score)
-  - Reuse existing `Activity` model for workouts (add garmin_id field)
-- Incremental sync same pattern as Strava
-- Activity deduplication: match Garmin + Strava activities by start_time + type + duration (within tolerance)
+- FIT file import: `openactivity garmin import --from-device|--from-connect|--from-zip|--from-directory`
+- Unified commands: `openactivity activities list`, `openactivity activity <ID>` (provider-agnostic)
+- Provider filter: `--provider garmin|strava` on activities list
+- Provider badges: [Strava], [Garmin], [Strava+Garmin] in activity listings
+- Library: `fitparse` (FIT file parsing, no API needed)
+- Deduplication: by provider_id (start timestamp) and cross-provider linking by time/type/duration
+- DB: `provider` + `provider_id` columns on activities, `activity_links` table, Garmin health tables
+
+### Feature 2.2: Unified Command Refactoring
+
+**Branch**: future (after `010-garmin-provider` merges)
+
+Refactor remaining overlapping Strava-specific commands to be provider-agnostic at the root level. Currently `openactivity activities list` and `openactivity activity <ID>` are unified; remaining commands like `analyze`, `records`, `predict`, `export` should also be promoted to work across providers.
+
+- Move `openactivity strava analyze` → `openactivity analyze` (reads from all providers)
+- Move `openactivity strava records` → `openactivity records` (scans all provider activities)
+- Move `openactivity strava predict` → `openactivity predict` (uses best data from any provider)
+- Keep provider-specific commands under their namespaces (`strava auth`, `strava sync`, `garmin import`)
+- Ensure all analysis commands respect `--provider` filter for per-provider analysis
 
 ---
 
