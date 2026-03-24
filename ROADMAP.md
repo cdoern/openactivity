@@ -170,21 +170,17 @@ Refactor remaining overlapping Strava-specific commands to be provider-agnostic 
 
 Features that combine data from multiple providers or leverage Garmin-specific health metrics for deeper insights.
 
-### Feature 3.1: Fitness / Fatigue Model (ATL/CTL/TSB)
+### Feature 3.1: Fitness / Fatigue Model (ATL/CTL/TSB) ✅
 
-**Branch**: `010-fitness-fatigue`
+**Branch**: `012-fitness-fatigue-model` | **Status**: Complete
 
-The classic training peaks model. Strava locks this behind Summit ($60/yr). Compute Acute Training Load (fatigue), Chronic Training Load (fitness), and Training Stress Balance (form) from HR and/or power data.
+The classic training peaks model. Strava locks this behind Summit ($60/yr). Compute Acute Training Load (fatigue), Chronic Training Load (fitness), and Training Stress Balance (form) from HR data using TRIMP-based TSS.
 
-- New command: `openactivity analyze fitness` (provider-agnostic, works with any synced data)
-- Flags: `--last 6m|1y|all`, `--type Run|Ride`
-- Algorithm:
-  - Training Stress Score (TSS) per activity from HR or power
-  - ATL: exponentially weighted average, 7-day time constant
-  - CTL: exponentially weighted average, 42-day time constant
-  - TSB = CTL - ATL (positive = fresh, negative = fatigued)
-- Output: daily fitness/fatigue/form values, current status label (peaking/maintaining/overreaching/detraining)
-- `--json` output for agents: "Is the user fresh enough for intervals tomorrow?"
+- Command: `openactivity strava analyze fitness`
+- Flags: `--last 6m|1y|all`, `--type Run|Ride`, `--chart`, `--output`, `--json`
+- Per-activity TSS shown in `openactivity strava activity <ID>` detail view
+- Status classification: peaking/maintaining/overreaching/detraining
+- Chart generation via matplotlib
 
 ### Feature 3.2: Training Intensity Distribution Analysis
 

@@ -16,6 +16,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-13
 - SQLite at `~/.local/share/openactivity/openactivity.db` (existing database, schema migration required) (010-garmin-provider)
 - Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing, no new deps (011-cross-provider-linking)
 - SQLite at `~/.local/share/openactivity/openactivity.db` — no schema changes, `activity_links` table already exists (011-cross-provider-linking)
+- Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM), matplotlib (charts) — all existing (012-fitness-fatigue-model)
+- SQLite at `~/.local/share/openactivity/openactivity.db` — no schema changes, all computed on-the-fly (012-fitness-fatigue-model)
 
 - Go 1.22+ + spf13/cobra (CLI), spf13/viper (config), gorm.io/driver/sqlite (storage), golang.org/x/oauth2 (auth), zalando/go-keyring (credentials), jedib0t/go-pretty (tables), go-echarts/go-echarts (charts), twpayne/go-gpx (GPX export) (001-strava-cli)
 
@@ -35,9 +37,9 @@ tests/
 Go 1.22+: Follow standard conventions
 
 ## Recent Changes
+- 012-fitness-fatigue-model: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM), matplotlib (charts) — all existing
 - 011-cross-provider-linking: Added Python 3.12+ + yper (CLI), rich (terminal output), sqlalchemy (ORM) — all existing, no new deps
 - 010-garmin-provider: Added Python 3.12+ + typer (CLI), rich (output), sqlalchemy (ORM), keyring (credentials), garminconnect (Garmin API)
-- 009-segment-trends: Added Python 3.12+ (existing) + yper (CLI), rich (terminal output), sqlalchemy (ORM), scipy (linear regression) — all existing
 
 
 <!-- MANUAL ADDITIONS START -->

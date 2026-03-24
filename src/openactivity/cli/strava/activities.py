@@ -384,6 +384,19 @@ def show_activity(
                 )
             return
 
+        # Compute TSS if activity has HR data
+        activity_tss = None
+        if activity.average_heartrate and activity.moving_time:
+            from openactivity.analysis.fitness import (
+                compute_activity_tss,
+                estimate_max_hr,
+                estimate_rest_hr,
+            )
+
+            max_hr = estimate_max_hr(session)
+            rest_hr = estimate_rest_hr(session)
+            activity_tss = compute_activity_tss(activity, max_hr, rest_hr)
+
         if use_json:
             from openactivity.analysis.gap import compute_gap
 
@@ -416,6 +429,7 @@ def show_activity(
                     else None
                 ),
                 "gap_available": json_gap.available,
+                "tss": activity_tss,
                 "gear": {"id": gear.id, "name": gear.name} if gear else None,
                 "laps": [
                     {
@@ -486,6 +500,8 @@ def show_activity(
                 f"  Heart Rate: {activity.average_heartrate:.0f} avg "
                 f"/ {activity.max_heartrate:.0f} max bpm"
             )
+        if activity_tss is not None:
+            console.print(f"  TSS: {activity_tss:.1f}")
         if activity.average_watts:
             console.print(
                 f"  Power: {activity.average_watts:.0f} avg W"

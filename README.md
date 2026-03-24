@@ -88,7 +88,8 @@ openactivity
     │   ├── effort              # Grade-adjusted pace trends
     │   ├── blocks              # Training periodization detection
     │   ├── correlate           # Cross-metric correlation
-    │   └── power-curve         # Best power for key durations
+    │   ├── power-curve         # Best power for key durations
+    │   └── fitness             # Fitness/Fatigue/Form (ATL/CTL/TSB)
     ├── predict                 # Race time predictions
     ├── records
     │   ├── list                # Personal records
