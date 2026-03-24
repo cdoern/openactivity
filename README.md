@@ -60,7 +60,9 @@ openactivity activity 12345678
 openactivity
 ├── activities
 │   └── list                    # List activities from all providers
-├── activity <ID>               # View activity detail (any provider)
+├── activity <ID>               # View activity detail (any provider, includes TSS)
+├── analyze
+│   └── fitness                # Fitness/Fatigue/Form (ATL/CTL/TSB)
 ├── config
 │   ├── list                    # Show all config values
 │   ├── get <key>               # Get a config value
@@ -88,8 +90,7 @@ openactivity
     │   ├── effort              # Grade-adjusted pace trends
     │   ├── blocks              # Training periodization detection
     │   ├── correlate           # Cross-metric correlation
-    │   ├── power-curve         # Best power for key durations
-    │   └── fitness             # Fitness/Fatigue/Form (ATL/CTL/TSB)
+    │   └── power-curve         # Best power for key durations
     ├── predict                 # Race time predictions
     ├── records
     │   ├── list                # Personal records

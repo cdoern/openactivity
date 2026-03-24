@@ -176,7 +176,7 @@ Features that combine data from multiple providers or leverage Garmin-specific h
 
 The classic training peaks model. Strava locks this behind Summit ($60/yr). Compute Acute Training Load (fatigue), Chronic Training Load (fitness), and Training Stress Balance (form) from HR data using TRIMP-based TSS.
 
-- Command: `openactivity strava analyze fitness`
+- Command: `openactivity analyze fitness` (also available as `openactivity strava analyze fitness`)
 - Flags: `--last 6m|1y|all`, `--type Run|Ride`, `--chart`, `--output`, `--json`
 - Per-activity TSS shown in `openactivity strava activity <ID>` detail view
 - Status classification: peaking/maintaining/overreaching/detraining

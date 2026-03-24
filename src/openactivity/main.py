@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from openactivity.cli.analyze import app as analyze_app
 from openactivity.cli.config import app as config_app
 from openactivity.cli.garmin.app import app as garmin_app
 from openactivity.cli.root import app
@@ -15,6 +16,7 @@ app.add_typer(config_app, name="config")
 
 # Unified provider-agnostic commands at root level
 app.add_typer(activities_app, name="activities")
+app.add_typer(analyze_app, name="analyze")
 app.command("activity")(show_activity)
 
 
