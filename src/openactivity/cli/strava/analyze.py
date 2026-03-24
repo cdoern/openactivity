@@ -1039,9 +1039,3 @@ def _render_correlate_json(result: dict) -> None:
         ],
     }
     print_json(output)
-
-
-    # Re-export fitness command so `strava analyze fitness` also works
-from openactivity.cli.analyze import analyze_fitness_cmd
-
-app.command("fitness")(analyze_fitness_cmd)
