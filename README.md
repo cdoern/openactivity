@@ -60,7 +60,9 @@ openactivity activity 12345678
 openactivity
 ├── activities
 │   └── list                    # List activities from all providers
-├── activity <ID>               # View activity detail (any provider)
+├── activity <ID>               # View activity detail (any provider, includes TSS)
+├── analyze
+│   └── fitness                # Fitness/Fatigue/Form (ATL/CTL/TSB)
 ├── config
 │   ├── list                    # Show all config values
 │   ├── get <key>               # Get a config value
