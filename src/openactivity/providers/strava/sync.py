@@ -157,6 +157,7 @@ def sync_activities(
     updated_count = 0
     error_count = 0
     latest_date = after
+    new_activities = []
 
     with Progress(
         SpinnerColumn(),
@@ -199,6 +200,7 @@ def sync_activities(
                     updated_count += 1
                 else:
                     session.add(local)
+                    new_activities.append(local)
                     new_count += 1
 
                 # Track latest activity date
@@ -234,12 +236,21 @@ def sync_activities(
     )
     session.commit()
 
+    # Auto-link new activities against other providers
+    link_stats = {"checked": 0, "linked": 0}
+    if new_activities:
+        from openactivity.db.queries import auto_link_new_activities
+
+        link_stats = auto_link_new_activities(session, new_activities)
+
     return {
         "synced": new_count + updated_count,
         "new": new_count,
         "updated": updated_count,
         "errors": error_count,
         "last_sync": datetime.now(tz=UTC).isoformat(),
+        "link_checked": link_stats["checked"],
+        "link_linked": link_stats["linked"],
     }
 
 

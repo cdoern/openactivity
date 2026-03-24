@@ -136,7 +136,23 @@ Import Garmin activity data via FIT files (no API dependency — Garmin rate-lim
 - Deduplication: by provider_id (start timestamp) and cross-provider linking by time/type/duration
 - DB: `provider` + `provider_id` columns on activities, `activity_links` table, Garmin health tables
 
-### Feature 2.2: Unified Command Refactoring
+### Feature 2.2: Cross-Provider Activity Linking ✨ NEW
+
+**Branch**: `011-cross-provider-linking`
+
+Automatically detect and link duplicate activities that exist in both Strava and Garmin. The matching algorithm and `activity_links` table already exist from Feature 2.1 but are never invoked. Wire up automatic linking during garmin import and strava sync, add a manual `openactivity activities link` command for bulk linking existing data, and ensure linked activities appear as a single entry in unified views.
+
+- New command: `openactivity activities link` — scan all unlinked activities and create cross-provider links
+- Auto-link during `openactivity garmin import` — after importing, scan new activities for Strava matches
+- Auto-link during `openactivity strava sync` — after syncing, scan new activities for Garmin matches
+- Matching: ±60s start time, same activity type (with fuzzy matching), ±5% duration
+- Confidence scoring: weighted combination of time proximity (60%) and duration similarity (40%)
+- `openactivity activities list` already shows `[Strava+Garmin]` badge for linked activities
+- `openactivity activities link --dry-run` to preview matches without committing
+- `openactivity activities link --unlink <ID>` to remove incorrect links
+- Stats output: "Linked X of Y potential matches (Z already linked)"
+
+### Feature 2.3: Unified Command Refactoring
 
 **Branch**: future (after `010-garmin-provider` merges)
 

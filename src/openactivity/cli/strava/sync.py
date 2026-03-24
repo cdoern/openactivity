@@ -118,6 +118,11 @@ def sync(
         if result["errors"]:
             console.print(f"  [yellow]{result['errors']} errors[/yellow]")
         console.print(f"  Last sync: {result['last_sync']}")
+        if result.get("link_linked", 0) > 0 or result.get("link_checked", 0) > 0:
+            console.print(
+                f"  Cross-provider linking: {result['link_linked']} of "
+                f"{result['link_checked']} new activities matched to Garmin"
+            )
 
 
 def _start_background_sync(*, full: bool, detail: bool, use_json: bool) -> None:
