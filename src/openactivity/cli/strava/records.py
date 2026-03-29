@@ -340,17 +340,39 @@ def show_history(
 
 @app.command("add-distance")
 def add_distance(
-    label: str = typer.Argument(help='Distance label (e.g., "15K", "50K").'),
-    meters: float = typer.Argument(help="Distance in meters."),
+    label: str = typer.Argument(help='Distance label (e.g., "15K", "10mi").'),
+    meters: float = typer.Option(None, "--meters", "-m", help="Distance in meters."),
+    miles: float = typer.Option(None, "--miles", "-mi", help="Distance in miles."),
+    km: float = typer.Option(None, "--km", "-k", help="Distance in kilometers."),
 ) -> None:
     """Add a custom distance for PR tracking.
 
     Examples:
-        openactivity strava records add-distance 15K 15000
-        openactivity strava records add-distance 50K 50000
+        openactivity strava records add-distance 15K --km 15
+        openactivity strava records add-distance 10mi --miles 10
+        openactivity strava records add-distance 50K --meters 50000
     """
     state = get_global_state()
     use_json = state.get("json", False)
+
+    specified = sum(v is not None for v in [meters, miles, km])
+    if specified == 0:
+        exit_with_error(
+            "missing_distance", "No distance specified.",
+            "Use --meters, --miles, or --km.", use_json=use_json,
+        )
+        return
+    if specified > 1:
+        exit_with_error(
+            "multiple_distances", "Multiple distance units specified.",
+            "Use only one of --meters, --miles, or --km.", use_json=use_json,
+        )
+        return
+
+    if miles is not None:
+        meters = miles * 1609.344
+    elif km is not None:
+        meters = km * 1000.0
 
     init_db()
     session = get_session()

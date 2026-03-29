@@ -339,6 +339,8 @@ def add_custom_distance(session: Session, label: str, meters: float) -> CustomDi
 
     cd = CustomDistance(label=label, distance_meters=meters)
     session.add(cd)
+    # Reset scan state so the next scan evaluates existing activities for this distance
+    session.query(Activity).update({Activity.pr_scanned: False})
     session.commit()
     return cd
 
