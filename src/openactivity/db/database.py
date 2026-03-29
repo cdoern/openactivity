@@ -53,8 +53,10 @@ def _migrate_db(engine) -> None:
 
     # Run versioned migrations
     from openactivity.db.migrations._001_add_garmin_support import migrate as migrate_001
+    from openactivity.db.migrations._002_add_source_filename import migrate as migrate_002
 
     migrate_001(engine)
+    migrate_002(engine)
 
 
 def init_db(db_path: Path | None = None) -> None:

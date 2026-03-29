@@ -84,7 +84,20 @@ def _import_from_device(session) -> importer.ImportResult:
         raise typer.Exit(1)
 
     console.print(f"Found {len(activity_files)} activities on device")
-    console.print("Downloading FIT files from device...")
+
+    # Filter out already-imported activities before downloading
+    new_files = importer.filter_new_activity_files(session, activity_files)
+    skipped_count = len(activity_files) - len(new_files)
+    if skipped_count > 0:
+        console.print(f"Skipping {skipped_count} already-imported activities")
+
+    if not new_files:
+        console.print("[green]All activities already imported[/green]")
+        result = importer.ImportResult()
+        result.activities_skipped = skipped_count
+        return result
+
+    console.print(f"Downloading {len(new_files)} new FIT files from device...")
 
     # Download with progress bar
     import tempfile
@@ -92,7 +105,7 @@ def _import_from_device(session) -> importer.ImportResult:
     dest_dir = Path(tempfile.mkdtemp(prefix="garmin_activities_"))
 
     with Progress(console=console) as progress:
-        task = progress.add_task("Downloading...", total=len(activity_files))
+        task = progress.add_task("Downloading...", total=len(new_files))
 
         def on_progress(current, total, filename):
             progress.update(task, completed=current, description=f"Downloading {filename}")
@@ -100,14 +113,16 @@ def _import_from_device(session) -> importer.ImportResult:
         from openactivity.providers.garmin.mtp import download_activity_files
 
         downloaded = download_activity_files(
-            activity_files, dest_dir, progress_callback=on_progress,
+            new_files, dest_dir, progress_callback=on_progress,
         )
 
     console.print(f"Downloaded {downloaded} files from device")
 
     # Import the downloaded files
     console.print("Importing activities...")
-    return importer.import_from_directory(session, dest_dir)
+    result = importer.import_from_directory(session, dest_dir)
+    result.activities_skipped += skipped_count
+    return result
 
 
 def garmin_import(

@@ -95,6 +95,7 @@ class Activity(Base):
     has_power: Mapped[bool] = mapped_column(Boolean, default=False)
     start_latlng: Mapped[str | None] = mapped_column(String, nullable=True)
     end_latlng: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_filename: Mapped[str | None] = mapped_column(String, nullable=True)
     synced_detail: Mapped[bool] = mapped_column(Boolean, default=False)
     pr_scanned: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

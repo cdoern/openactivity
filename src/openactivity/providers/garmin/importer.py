@@ -25,6 +25,24 @@ class ImportResult:
         self.activities_link_checked = 0
 
 
+def get_imported_filenames(session: Session) -> set[str]:
+    """Return the set of source_filenames already imported for Garmin."""
+    rows = (
+        session.query(Activity.source_filename)
+        .filter(Activity.provider == "garmin", Activity.source_filename.isnot(None))
+        .all()
+    )
+    return {r[0] for r in rows}
+
+
+def filter_new_activity_files(
+    session: Session, file_list: list[dict],
+) -> list[dict]:
+    """Filter an MTP file list to only files not already imported."""
+    imported = get_imported_filenames(session)
+    return [f for f in file_list if f.get("filename", "") not in imported]
+
+
 def find_fit_files_in_directory(directory: Path) -> list[Path]:
     """Find all FIT files in a directory recursively.
 
@@ -171,7 +189,19 @@ def import_from_directory(
 
     fit_files = find_fit_files_in_directory(directory)
 
+    # Bulk-load already-imported filenames and provider_ids to skip without parsing
+    imported_filenames = get_imported_filenames(session)
+    existing_provider_ids = {
+        r[0]
+        for r in session.query(Activity.provider_id).filter_by(provider="garmin").all()
+        if r[0] is not None
+    }
+
     for fit_file in fit_files:
+        if fit_file.name in imported_filenames:
+            result.activities_skipped += 1
+            continue
+
         result.files_processed += 1
 
         try:
@@ -182,20 +212,23 @@ def import_from_directory(
                 result.activities_skipped += 1
                 continue
 
-            # Check if already imported
+            # Check if already imported (handles files with different names but same activity)
             provider_id = activity_data["provider_id"]
-            existing = (
-                session.query(Activity)
-                .filter_by(provider="garmin", provider_id=provider_id)
-                .first()
-            )
-
-            if existing:
+            if provider_id in existing_provider_ids:
+                # Backfill source_filename on the existing row so future runs skip by filename
+                existing = (
+                    session.query(Activity)
+                    .filter_by(provider="garmin", provider_id=provider_id)
+                    .first()
+                )
+                if existing and not existing.source_filename:
+                    existing.source_filename = fit_file.name
                 result.activities_skipped += 1
                 continue
 
             # Create new activity
             activity_data["athlete_id"] = athlete_id
+            activity_data["source_filename"] = fit_file.name
             new_activity = Activity(**activity_data)
             session.add(new_activity)
             new_activities.append(new_activity)
