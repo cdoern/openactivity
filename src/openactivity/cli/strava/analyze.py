@@ -159,8 +159,9 @@ def analyze_pace(
 
         avg_pace = result["avg_pace"]
         if avg_pace > 0:
-            mins = int(avg_pace // 60)
-            secs = int(avg_pace % 60)
+            display_pace = avg_pace * 1.609344 if units != "metric" else avg_pace
+            mins = int(display_pace // 60)
+            secs = int(display_pace % 60)
             unit_label = "/km" if units == "metric" else "/mi"
             console.print(f"  Average pace: {mins}:{secs:02d} {unit_label}")
 
@@ -172,6 +173,8 @@ def analyze_pace(
 
         for point in result["activities"][-20:]:  # Last 20
             pace = point["pace_per_km"]
+            if units != "metric":
+                pace = pace * 1.609344
             mins = int(pace // 60)
             secs = int(pace % 60)
             unit_label = "/km" if units == "metric" else "/mi"
