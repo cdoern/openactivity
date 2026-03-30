@@ -289,7 +289,7 @@ def scan_activity_for_records(
 
 
 def scan_all_activities(
-    session: Session, *, full: bool = False
+    session: Session, *, full: bool = False, provider: str | None = None
 ) -> dict[str, int]:
     """Scan all activities for personal records.
 
@@ -305,12 +305,10 @@ def scan_all_activities(
         session.query(PersonalRecord).delete()
         session.flush()
 
-    activities = (
-        session.query(Activity)
-        .filter(Activity.pr_scanned.is_(False))
-        .order_by(Activity.start_date)
-        .all()
-    )
+    query = session.query(Activity).filter(Activity.pr_scanned.is_(False))
+    if provider:
+        query = query.filter(Activity.provider == provider)
+    activities = query.order_by(Activity.start_date).all()
 
     distances = _get_all_distances(session)
     totals = {"scanned": 0, "new_records": 0, "updated_records": 0}

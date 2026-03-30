@@ -18,6 +18,7 @@ def compute_summary(
     period: str = "weekly",
     last: str = "90d",
     activity_type: str | None = None,
+    provider: str | None = None,
 ) -> list[dict]:
     """Aggregate training volume by time period.
 
@@ -30,6 +31,7 @@ def compute_summary(
         session,
         activity_type=activity_type,
         after=after,
+        provider=provider,
         limit=10000,
         offset=0,
     )

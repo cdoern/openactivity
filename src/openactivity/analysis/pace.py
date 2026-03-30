@@ -16,6 +16,7 @@ def compute_pace_trend(
     *,
     last: str = "90d",
     activity_type: str = "Run",
+    provider: str | None = None,
 ) -> dict:
     """Compute average pace per activity over a time window.
 
@@ -28,6 +29,7 @@ def compute_pace_trend(
         session,
         activity_type=activity_type,
         after=after,
+        provider=provider,
         sort="date",
         limit=10000,
         offset=0,
