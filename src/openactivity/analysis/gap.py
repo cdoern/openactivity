@@ -310,7 +310,7 @@ def _percentile(value: float, distribution: list[float]) -> float:
 
 
 def get_user_activity_stats(
-    session: Session, activity_type: str = "Run"
+    session: Session, activity_type: str = "Run", provider: str | None = None
 ) -> dict:
     """Build percentile distributions from user's activity history.
 
@@ -323,6 +323,7 @@ def get_user_activity_stats(
     activities = get_activities(
         session,
         activity_type=activity_type,
+        provider=provider,
         sort="date",
         limit=10000,
         offset=0,
@@ -367,6 +368,7 @@ def get_effort_trend(
     *,
     time_window: str = "90d",
     activity_type: str = "Run",
+    provider: str | None = None,
 ) -> dict:
     """Compute effort trend across activities over a time window.
 
@@ -379,6 +381,7 @@ def get_effort_trend(
         session,
         activity_type=activity_type,
         after=after,
+        provider=provider,
         sort="date",
         limit=10000,
         offset=0,
@@ -405,7 +408,7 @@ def get_effort_trend(
         }
 
     # Get stats for effort scoring
-    stats = get_user_activity_stats(session, activity_type)
+    stats = get_user_activity_stats(session, activity_type, provider=provider)
 
     entries = []
     gap_values: list[float] = []

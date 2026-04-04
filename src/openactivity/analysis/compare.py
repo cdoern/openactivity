@@ -80,6 +80,7 @@ def aggregate_range_metrics(
     start: date,
     end: date,
     activity_type: str | None = None,
+    provider: str | None = None,
 ) -> RangeMetrics:
     """Query activities in a date range and compute aggregated metrics."""
     after = datetime(start.year, start.month, start.day)
@@ -90,6 +91,7 @@ def aggregate_range_metrics(
         activity_type=activity_type,
         after=after,
         before=before,
+        provider=provider,
         limit=50000,
         offset=0,
     )

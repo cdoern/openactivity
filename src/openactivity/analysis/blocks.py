@@ -319,6 +319,7 @@ def detect_blocks(
     *,
     time_window: str = "6m",
     activity_type: str = "Run",
+    provider: str | None = None,
 ) -> dict:
     """Detect training blocks from activity data.
 
@@ -334,6 +335,7 @@ def detect_blocks(
         session,
         activity_type=activity_type,
         after=after,
+        provider=provider,
         sort="date",
         limit=10000,
         offset=0,

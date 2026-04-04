@@ -141,6 +141,7 @@ def compute_weekly_metrics(
     session: Session,
     activity_type: str = "Run",
     time_window: str = "1y",
+    provider: str | None = None,
 ) -> list[dict]:
     """Compute all weekly metrics from activity data.
 
@@ -149,7 +150,7 @@ def compute_weekly_metrics(
     after = _parse_time_window(time_window)
     activities = get_activities(
         session, activity_type=activity_type, after=after,
-        sort="date", limit=10000, offset=0,
+        provider=provider, sort="date", limit=10000, offset=0,
     )
     valid = [
         a for a in activities
@@ -248,6 +249,7 @@ def correlate(
     time_window: str = "1y",
     activity_type: str = "Run",
     lag: int = 0,
+    provider: str | None = None,
 ) -> dict:
     """Orchestrate correlation computation.
 
@@ -288,7 +290,7 @@ def correlate(
         }
 
     # Compute weekly metrics
-    weeks = compute_weekly_metrics(session, activity_type, time_window)
+    weeks = compute_weekly_metrics(session, activity_type, time_window, provider=provider)
     total_weeks = len(weeks)
 
     if total_weeks < MIN_SAMPLES:

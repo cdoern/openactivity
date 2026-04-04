@@ -115,6 +115,7 @@ def compute_daily_tss(
     after: datetime | None = None,
     before: datetime | None = None,
     activity_type: str | None = None,
+    provider: str | None = None,
 ) -> tuple[dict[date, float], dict]:
     """Query activities, compute per-activity TSS, aggregate by day.
 
@@ -136,6 +137,7 @@ def compute_daily_tss(
         after=after,
         before=before,
         activity_type=activity_type,
+        provider=provider,
         sort="date",
         limit=100_000,
         offset=0,
@@ -247,6 +249,7 @@ def analyze_fitness(
     *,
     last: str = "6m",
     activity_type: str | None = None,
+    provider: str | None = None,
 ) -> dict:
     """Full fitness/fatigue analysis.  Returns a result dict matching the
     CLI contract in ``contracts/cli-commands.md``.
@@ -257,6 +260,7 @@ def analyze_fitness(
         session,
         after=after,
         activity_type=activity_type,
+        provider=provider,
     )
 
     if not daily_tss:

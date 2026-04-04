@@ -248,6 +248,7 @@ def compute_consistency(
     session: Session,
     activity_type: str = "Run",
     weeks: int = CONSISTENCY_WINDOW_WEEKS,
+    provider: str | None = None,
 ) -> dict:
     """Score training consistency: % of weeks with >= 3 activities.
 
@@ -257,7 +258,7 @@ def compute_consistency(
     after = datetime.now() - timedelta(days=weeks * 7)
     activities = get_activities(
         session, activity_type=activity_type, after=after,
-        sort="date", limit=10000, offset=0,
+        provider=provider, sort="date", limit=10000, offset=0,
     )
     valid = [a for a in activities if a.distance and a.distance > 0 and a.start_date]
 
@@ -282,6 +283,7 @@ def compute_consistency(
 def compute_volume_trend(
     session: Session,
     activity_type: str = "Run",
+    provider: str | None = None,
 ) -> dict:
     """Score volume trend: last 4 weeks vs prior 4 weeks.
 
@@ -291,7 +293,7 @@ def compute_volume_trend(
     after = datetime.now() - timedelta(days=8 * 7)
     activities = get_activities(
         session, activity_type=activity_type, after=after,
-        sort="date", limit=10000, offset=0,
+        provider=provider, sort="date", limit=10000, offset=0,
     )
     valid = [a for a in activities if a.distance and a.distance > 0 and a.start_date]
 
@@ -329,6 +331,7 @@ def compute_volume_trend(
 def compute_taper_status(
     session: Session,
     activity_type: str = "Run",
+    provider: str | None = None,
 ) -> dict:
     """Score taper status: volume declining with intensity maintained.
 
@@ -338,7 +341,7 @@ def compute_taper_status(
     after = datetime.now() - timedelta(days=6 * 7)
     activities = get_activities(
         session, activity_type=activity_type, after=after,
-        sort="date", limit=10000, offset=0,
+        provider=provider, sort="date", limit=10000, offset=0,
     )
     valid = [
         a for a in activities
@@ -477,6 +480,7 @@ def predict(
     target_distance: str,
     activity_type: str = "Run",
     race_date: str | None = None,
+    provider: str | None = None,
 ) -> dict:
     """Orchestrate race prediction and readiness scoring.
 
@@ -521,9 +525,9 @@ def predict(
         return prediction
 
     # Compute readiness if enough training data
-    consistency = compute_consistency(session, activity_type)
-    volume_trend = compute_volume_trend(session, activity_type)
-    taper_status = compute_taper_status(session, activity_type)
+    consistency = compute_consistency(session, activity_type, provider=provider)
+    volume_trend = compute_volume_trend(session, activity_type, provider=provider)
+    taper_status = compute_taper_status(session, activity_type, provider=provider)
     pr_recency = compute_pr_recency(efforts)
     readiness = compute_readiness_score(
         consistency, volume_trend, taper_status, pr_recency
@@ -533,7 +537,7 @@ def predict(
 
     # Get current training phase
     blocks_result = detect_blocks(
-        session, time_window="3m", activity_type=activity_type
+        session, time_window="3m", activity_type=activity_type, provider=provider
     )
     current_phase = blocks_result.get("current_phase", "unknown")
     phase_desc = blocks_result.get("current_phase_description", "")
