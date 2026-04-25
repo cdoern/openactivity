@@ -117,3 +117,11 @@ def analyze_fitness_cmd(
     _analyze.analyze_fitness_cmd(
         last=last, activity_type=activity_type, chart=chart, output=output, provider="strava",
     )
+
+
+@app.command("readiness")
+def analyze_readiness(
+    last: str | None = typer.Option(None, "--last", help='Time window for trend.'),
+) -> None:
+    """Daily recovery & readiness score (Strava only)."""
+    _analyze.analyze_readiness(last=last, provider="strava")

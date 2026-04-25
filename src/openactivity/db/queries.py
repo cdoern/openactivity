@@ -15,6 +15,7 @@ from openactivity.db.models import (
     AthleteStats,
     AthleteZone,
     CustomDistance,
+    GarminDailySummary,
     Gear,
     Lap,
     PersonalRecord,
@@ -24,7 +25,7 @@ from openactivity.db.models import (
 )
 
 if TYPE_CHECKING:
-    from datetime import datetime
+    from datetime import date, datetime
 
     from sqlalchemy.orm import Session
 
@@ -273,6 +274,26 @@ def get_records_by_distance(
 def get_custom_distances(session: Session) -> list[CustomDistance]:
     """Get all custom distances."""
     return session.query(CustomDistance).order_by(CustomDistance.label).all()
+
+
+def get_daily_summary(session: Session, target_date: date) -> GarminDailySummary | None:
+    """Get Garmin daily summary for a specific date."""
+    return session.query(GarminDailySummary).filter_by(date=target_date).first()
+
+
+def get_daily_summaries(
+    session: Session,
+    *,
+    after: date | None = None,
+    before: date | None = None,
+) -> list[GarminDailySummary]:
+    """Get Garmin daily summaries within a date range."""
+    query = session.query(GarminDailySummary)
+    if after:
+        query = query.filter(GarminDailySummary.date >= after)
+    if before:
+        query = query.filter(GarminDailySummary.date <= before)
+    return query.order_by(asc(GarminDailySummary.date)).all()
 
 
 def get_sync_state(session: Session, entity_type: str) -> SyncState | None:

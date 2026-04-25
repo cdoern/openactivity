@@ -31,6 +31,8 @@ app = typer.Typer(
         "  openactivity analyze compare --range1 2025-01-01:2025-03-31"
         " --range2 2026-01-01:2026-03-31\n"
         "  openactivity analyze fitness\n"
+        "  openactivity analyze readiness\n"
+        "  openactivity analyze readiness --last 30d\n"
     ),
     no_args_is_help=True,
 )
@@ -1230,3 +1232,189 @@ def analyze_fitness_cmd(
             console.print(trend_table)
     finally:
         session.close()
+
+
+def _parse_days(last: str) -> int:
+    """Parse a time window string like '7d', '30d' into number of days."""
+    unit = last[-1].lower()
+    try:
+        value = int(last[:-1])
+    except ValueError:
+        return 30
+    if unit == "d":
+        return value
+    if unit == "m":
+        return value * 30
+    if unit == "y":
+        return value * 365
+    return 30
+
+
+@app.command("readiness")
+def analyze_readiness(
+    last: str | None = typer.Option(
+        None, "--last", help='Time window for trend: "7d", "30d", "90d". Omit for today only.'
+    ),
+    provider: str | None = typer.Option(
+        None, "--provider", help='Filter by provider (e.g., "strava", "garmin"). Default: all.'
+    ),
+) -> None:
+    """Daily recovery & readiness score.
+
+    Combines Garmin health metrics (HRV, sleep) with training load
+    (TSB, volume trend) to produce a 0-100 readiness score with an
+    actionable recommendation.
+
+    Examples:
+        openactivity analyze readiness
+        openactivity analyze readiness --last 30d
+        openactivity analyze readiness --json
+        openactivity analyze readiness --provider strava
+    """
+    state = get_global_state()
+    use_json = state.get("json", False)
+
+    init_db()
+    session = get_session()
+
+    try:
+        from openactivity.analysis.readiness import (
+            compute_readiness,
+            compute_readiness_trend,
+        )
+
+        if last:
+            # Trend mode
+            days = _parse_days(last)
+            trend = compute_readiness_trend(session, days)
+
+            if use_json:
+                today = trend["today"]
+                json_out = {
+                    "today": _readiness_to_dict(today),
+                    "daily": [_readiness_to_dict(r) for r in trend["daily"]],
+                    "summary": trend["summary"],
+                }
+                print_json(json_out)
+                return
+
+            today = trend["today"]
+            daily = trend["daily"]
+            summary = trend["summary"]
+
+            console.print(f"\n[bold]Readiness Trend (last {last})[/bold]\n")
+
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("Date")
+            table.add_column("Score", justify="right")
+            table.add_column("Label")
+            table.add_column("HRV", justify="right")
+            table.add_column("Sleep", justify="right")
+            table.add_column("Form", justify="right")
+            table.add_column("Volume", justify="right")
+
+            for r in daily:
+                comp_scores = {c.name: c for c in r.components}
+                score_style = (
+                    "green" if r.score >= 75 else "red" if r.score < 40 else "yellow"
+                )
+                table.add_row(
+                    r.date.isoformat(),
+                    f"[{score_style}]{r.score}[/{score_style}]",
+                    r.label,
+                    _fmt_component(comp_scores.get("hrv")),
+                    _fmt_component(comp_scores.get("sleep")),
+                    _fmt_component(comp_scores.get("form")),
+                    _fmt_component(comp_scores.get("volume")),
+                )
+
+            console.print(table)
+
+            avg = summary["average"]
+            best = summary.get("best")
+            worst = summary.get("worst")
+            parts = [f"Average: {avg}"]
+            if best:
+                parts.append(f"Best: {best['score']} ({best['date']})")
+            if worst:
+                parts.append(f"Worst: {worst['score']} ({worst['date']})")
+            console.print(f"\n  {'  |  '.join(parts)}")
+
+        else:
+            # Today-only mode
+            result = compute_readiness(session)
+
+            if use_json:
+                print_json(_readiness_to_dict(result))
+                return
+
+            if result.score == 0 and result.label == "Unknown":
+                console.print(
+                    "[red]No training or health data found.[/red] "
+                    "Run 'openactivity strava sync' or 'openactivity garmin import' first."
+                )
+                raise typer.Exit(code=1)
+
+            score_style = (
+                "green" if result.score >= 75
+                else "red" if result.score < 40
+                else "yellow"
+            )
+            console.print(
+                f"\n[bold]Readiness Score: "
+                f"[{score_style}]{result.score}/100[/{score_style}]"
+                f" — {result.label}[/bold]\n"
+            )
+
+            for c in result.components:
+                if c.available:
+                    bar_filled = c.score // 10
+                    bar_empty = 10 - bar_filled
+                    bar = "█" * bar_filled + "░" * bar_empty
+                    console.print(
+                        f"  {c.name:<12s} {bar}  {c.score:>3d}  ({c.description})"
+                    )
+                else:
+                    console.print(
+                        f"  {c.name:<12s} {'─' * 10}   —  ({c.description})"
+                    )
+
+            # Note about unavailable components
+            unavailable = [c for c in result.components if not c.available]
+            if unavailable:
+                names = " and ".join(c.name.upper() for c in unavailable)
+                console.print(
+                    f"\n  [dim]{names} data unavailable — "
+                    "score based on available components only[/dim]"
+                )
+
+            console.print(f"\n  [bold]Recommendation:[/bold] {result.recommendation}")
+
+    finally:
+        session.close()
+
+
+def _fmt_component(comp) -> str:
+    """Format a component score for the trend table."""
+    if comp is None or not comp.available:
+        return "[dim]—[/dim]"
+    return str(comp.score)
+
+
+def _readiness_to_dict(result) -> dict:
+    """Convert a ReadinessResult to a JSON-serializable dict."""
+    components = {}
+    for c in result.components:
+        components[c.name] = {
+            "score": c.score,
+            "weight": round(c.weight, 2),
+            "available": c.available,
+            "description": c.description,
+        }
+    return {
+        "date": result.date.isoformat(),
+        "score": result.score,
+        "label": result.label,
+        "recommendation": result.recommendation,
+        "components": components,
+    }
